@@ -24,7 +24,8 @@
         1. [enum 클래스 정의](#enum-클래스-정의)
         2. [when으로 enum 클래스 다루기](#when으로-enum-클래스-다루기)
         3. [when과 임의의 객체를 함께 사용](#when과-임의의-객체를-함께-사용)
-
+        4. [인자 없는 when 사용](#인자-없는-when-사용)
+        5. [스마트 캐스트](#스마트-캐스트)
 
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
@@ -83,7 +84,7 @@ if(value is String) // 타입을 검사한다.
 ### 온라인 놀이터
  : [프로그램을 설치하거나 설정할 필요 없이 코틀린을 써볼 수 있는 아주 쉬운 방법](http://try.kotl.in/)
 
-# 02 코틀린 기초
+# 02장 코틀린 기초
  * 함수를 최상위 수준에 정의할 수 있다. 꼭 클래스 안에 함수를 넣어야 할 필요가 없다.
  * `System.out.println` 대신에 `println` 이라고 쓴다. 코틀린 표준 라이브러리는 여러 가지 표준 자바 라이브러리 함수를 간결하게 사용할 수 있게 감싼 래퍼를 제공한다. `println`도 그런 함수 중 하나다.
 
@@ -225,5 +226,32 @@ if(value is String) // 타입을 검사한다.
         setOf(BLUE, VIOLET) -> INDIGO
         else -> throw Exception("Dirty color")
     }
->>> println(mix(BLUE, YELLOW))
-GREEN
+ >>> println(mix(BLUE, YELLOW))
+ GREEN
+ ```
+ 
+ ### 인자 없는 when 사용
+ when에 아무 인자도 없으려면 각 분기의 조건이 불리언 결과를 계산하는 식이어야 한다.
+ ```kotlin
+ fun mixOptimized(c1: Color, c2: Color) =
+    when {
+        (c1 == RED && c2 == YELLOW) || (c1 == YELLOW && c2 == RED) -> ORANGE
+        (c1 == YELLOW && c2 == BLUE) || (c1 == BLUE && c2 == YELLOW) -> GREEN
+        (c1 == BLUE && c2 == VIOLET) || (c1 == VIOLET && c2 == BLUE) -> INDIGO
+        else -> throw Exception("Dirty color")
+    }
+ >> println(mixOptimized(BLUE, YELLOW))
+ GREEN
+ ```
+ 
+ ### 스마트 캐스트
+ * 어떤 변수가 원하는 타입인지 일단 is로 검사하고 나면 굳이 변수를 원하는 타입으로 캐스팅하지 않아도 마치 처음부터 그 변수가 원하는 타입으로 선언된 것처럼 사용할 수 있다. 하지만 실제로는 컴파일러가 캐스팅을 수행해준다. 이를 스마트 캐스트라고 부른다.
+ * if와 when의 분기에서 블록을 사용 할 경우 블록의 마지막 문장이 블록 전체의 결과가 된다.
+ ```kotlin
+ fun eval(e: Expr): Int =
+    when (e) {
+        is Num -> e.value
+        is Sum -> eval(e.right) + eval(e.left)
+        else -> throw IllegalArgumentException("Unknown expression")
+    }
+ ```
