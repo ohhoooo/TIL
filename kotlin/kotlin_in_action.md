@@ -26,7 +26,13 @@
         3. [when과 임의의 객체를 함께 사용](#when과-임의의-객체를-함께-사용)
         4. [인자 없는 when 사용](#인자-없는-when-사용)
         5. [스마트 캐스트](#스마트-캐스트)
-
+      4. [while과 for 루프](#3-while과-for-루프)
+         1. [수에 대한 이터레이션: 범위와 수열](#수에-대한-이터레이션-범위와-수열)
+         2. [맵에 대한 이터레이션](#맵에-대한-이터레이션)
+         3. [in으로 컬렉션이나 범위의 원소 검사](#in으로-컬렉션이나-범위의-원소-검사)
+      5. [코틀린의 예외 처리](#4-코틀린의-예외-처리)
+         1. [try, catch, finally](#try-catch-finally)
+         2. [try를 식으로 사용](#try를-식으로-사용)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -254,4 +260,117 @@ if(value is String) // 타입을 검사한다.
         is Sum -> eval(e.right) + eval(e.left)
         else -> throw IllegalArgumentException("Unknown expression")
     }
+ ```
+
+ ## 3. while과 for 루프
+ * 코틀린 while 루프는 자바와 동일
+ * for는 자바의 for-each 루프에 해당하는 형태만 존재
+
+ ### 수에 대한 이터레이션: 범위와 수열
+ for 루프의 가장 흔한 용례인 초깃값, 증가 값, 최종 값을 사용한 루프를 대신하기 위해 코틀린에서는 범위를 사용한다. 범위는 기본적으로 두 값으로 이뤄진 구간이다. 보통은 그 두 값은 정수 등의 숫자 타입의 값이며, `.. 연산자`로 시작 값과 끝 값을 연결해서 범위를 만든다. `downTo,step,until 등이 있다.`
+
+ ```kotlin
+ fun fizzBuzz(i: Int) = when {
+    i % 15 == 0 -> "FizzBuzz "
+    i % 3 == 0 -> "Fizz "
+    i % 5 == 0 -> "Buzz "
+    else -> "$i "
+ }
+
+ for (i in 1..100) { // 1부터 100까지 정수에 대해 이터레이션
+    print(fizzBuzz(i))
+ }
+ >>> 1 2 Fizz 4 Buzz Fizz 7 ...
+
+ for (i in 100 downTo 1 step 2) {
+    print(fizzBuzz(i))
+ }
+ >>> Buzz 98 Fizz 94 92 FizzBuzz 88 ...
+ ```
+
+ ### 맵에 대한 이터레이션
+ .. 연산자를 숫자 타입의 값뿐 아니라 문자 타입의 값에도 적용할 수 있다. 키를 사용해 맵의 값을 가져오거나 키에 해당하는 값을 설정하는 get과 put을 사용하는 대신 map[key]나 map[key] = value를 사용해 값을 가져오고 설정할 수 있다.
+ ```kotlin
+ val binaryReps = TreeMap<Char, String>() // 키를 정렬하기 위해 TreeMap 사용
+
+ for(c in 'A' .. 'F') { // A ~ F까지 문자의 범위를 사용해 이터레이션
+   val binary = Integer.toBinaryString(c.toInt())
+   binaryReps[c] = binary // c를 키로 c의 2진 표현을 맵에 넣는다.
+ }
+
+ for((letter, binary) in binaryReps) { // 맵에 대해 이터레이션한다. 맵의 키와 값을 두 변수에 각각 대입한다.
+   println("$letter = $binary")
+ }
+ ```
+
+ 맵에 사용했던 구조 분해 구문을 맵이 아닌 컬렉션에도 활용할 수 있다.
+ ```kotlin
+ val list = arrayListOf("10", "11", "1001")
+ for ((index, element), in list.withIndex()) {
+   println("$index: $element")
+ }
+ ```
+
+ ### in으로 컬렉션이나 범위의 원소 검사
+ in 연산자를 사용해 어떤 값이 범위에 속하는지 검사할 수 있다. 반대로 !in을 사용하면 어떤 값이 범위에 속하지 않는지 검사할 수 있다.
+ ```kotlin
+ fun isLetter(c: Char) = c in 'a'..'z' || c in 'A'..'Z'
+ fun isNotDigit(c: Char) = c !in '0'..'9'
+ >> println(isLetter('q'))
+ true
+ >> println(isNotDigit('x'))
+ true
+ ```
+
+ ```kotlin
+ fun recognize(c: Char) = when (C) {
+   in '0'..'9' -> "It's a digit!"
+   in 'a'..'z', in 'A'..'Z' -> "It's a letter!"
+   else -> "I don't know..."
+ }
+ >>> println(recognize('8'))
+ It's a digit!
+ ```
+
+ ## 4. 코틀린의 예외 처리
+ 코틀린의 예외 처리는 자바나 다른 언어의 예외 처리와 비슷하다. 발생한 예외를 함수 호출단에서 처리하지 않으면 함수 호출 스택을 거슬러 올라가면서 예외를 처리하는 부분이 나올 때까지 예외를 다시 던진다.
+ 
+ ```kotlin
+ if (percentage !in 0..100) {
+   throw IllegalArgumentException ( // 코틀린의 throw는 식이다.
+      "A percentage value must be between 0 and 100: $percentage")
+ }
+ ```
+
+ ### try, catch, finally
+ 자바 코드와 가장 큰 차이는 throws 절이 코드에 없다는 점이다. 자바에서는 함수를 작성할 때 함수 선언 뒤에 throws IOException을 붙어야 한다. 이유는 IOException이 체크 예외이기 때문이고 자바에서는 체크 예외를 명시적으로 처리해야 한다. 어떤 함수가 던질 가능성이 있는 예외나 그 함수가 호출한 다른 함수에서 발생할 수 있는 예외를 모두 catch로 처리해야 하며, 처리하지 않은 예외는 throws 절에 명시해야 한다.
+
+ 코틀린은 체크 예외와 언체크 예외를 구별하지 않는다. 코틀린에서는 함수가 던지는 예외를 지정하지 않고 발생한 예외를 잡아내도 되고 잡아내지 않아도 된다.
+ ```kotlin
+ fun readNumber(reader: BufferedReader): Int? {
+   try {
+      val line = reader.readLine()
+      return Integer.parseInt(line)
+   } catch(e: NumberFormatException) {
+      return null
+   } finally {
+      reader.close()
+   }
+ }
+ ```
+
+ ### try를 식으로 사용
+ * 코틀린의 try 키워드는 if나 when과 마찬가지로 식이다.
+ * if와 달리 try의 본문을 반드시 중괄호 {}로 둘러싸야 한다.
+ * try의 본문도 내부에 여러 문장이 있으면 마지막 식의 값이 전체 결과 값이다.
+ * 이 예제는 catch 블록 안에서 return 문을 사용하기 때문에 예외가 발생한 경우 catch 블록 다음의 코드는 실행되지 않는다.
+ ```kotlin
+ fun readNumber(reader: BufferedReader) {
+   val number = try {
+      Integer.parseInt(reader.readLine())
+   } catch(e: NumberFormatException) {
+      return
+   }
+   println(number)
+ }
  ```
