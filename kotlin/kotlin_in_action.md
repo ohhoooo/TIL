@@ -11,7 +11,7 @@
         2. [인텔리J 아이디어와 안드로이드 스튜디오의 코틀린 플러그인](#인텔리j-아이디어와-안드로이드-스튜디오의-코틀린-플러그인)
         3. [대화형 셸(REPL)](#대화형-셸repl)
         4. [온라인 놀이터](#온라인-놀이터)
-2. [코틀린 기초](#02-코틀린-기초)
+2. [코틀린 기초](#02장-코틀린-기초)
     1. [함수와 변수](#1-함수와-변수)
         1. [함수](#함수)
         2. [변수](#변수)
@@ -33,6 +33,19 @@
       5. [코틀린의 예외 처리](#4-코틀린의-예외-처리)
          1. [try, catch, finally](#try-catch-finally)
          2. [try를 식으로 사용](#try를-식으로-사용)
+3. [함수 정의와 호출](#03장-함수-정의와-호출)
+   1. [코틀린에서 컬렉션 만들기](#1-코틀린에서-컬렉션-만들기)
+   2. [함수를 호출하기 쉽게 만들기](#2-함수를-호출하기-쉽게-만들기)
+      1. [이름 붙인 인자](#이름-붙인-인자)
+      2. [디폴트 파라미터 값](#디폴트-파라미터-값)
+      3. [정적인 유틸리티 클래스 없애기: 최상위 함수와 프로퍼티](#정적인-유틸리티-클래스-없애기-최상위-함수와-프로퍼티)
+   3. [메서드를 다른 클래스에 추가: 확장 함수와 확장 프로퍼티](#3-메서드를-다른-클래스에-추가-확장-함수와-확장-프로퍼티)
+      1. [임포트와 확장 함수](#임포트와-확장-함수)
+      2. [자바에서 확장 함수 호출](#자바에서-확장-함수-호출)
+      3. [확장 함수로 유틸리티 함수 정의](#확장-함수로-유틸리티-함수-정의)
+      4. [확장 프로퍼티](#확장-프로퍼티)
+
+
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -373,4 +386,221 @@ if(value is String) // 타입을 검사한다.
    }
    println(number)
  }
+ ```
+
+# 03장 함수 정의와 호출
+
+ * 여기서 to는 언어가 제공하는 특별한 키워드가 아니라 일반 함수
+ * 코틀린의 javaClass = 자바의 getClass()
+
+ ## 1. 코틀린에서 컬렉션 만들기
+ ```kotlin
+ val set = hashSetOf(1,7,53)
+ val list = arrayListOf(1,7,53)
+ val map = hashMapOf(1 to "one", 7 to "seven", 53 to "fifty-three")
+
+ >>> println(set.javaClass) // class java.util.HashSet
+ >>> println(list.javaClass) // class java.util.ArrayList
+ >>> println(map.javaClass) // class java.util.HashMap
+ ```
+ 위의 결과는 코틀린이 자신만의 컬렉션 기능을 제공하지 않는다는 뜻이다. 표준 자바 컬렉션을 활용하면 자바 코드와 상호작용하기가 훨씬 더 쉽다. 자바에서 코틀린 함수를 호출하거나 코틀린에서 자바 함수를 호출할 때 자바와 코틀린 컬렉션을 서로 변환할 필요가 없다. 코틀린 컬렉션은 자바 컬렉션과 똑같은 클래스다. 하지만 코틀린에서는 자바보다 더 많은 기능을 쓸 수 있다.
+
+ ```kotlin
+ val strings = listOf("first", "second", "fourteenth")
+ >>> println(strings.last()) // fourteenth
+ 
+ val numbers = setOf(1, 14, 2)
+ >>> println(numbers.max()) // 14
+ ```
+
+ ## 2. 함수를 호출하기 쉽게 만들기
+ * 어떻게 하면 이 함수를 호출하는 문장을 덜 번잡하게 만들 수 있을까?
+ * 함수를 호출할 때 마다 매번 네 인자를 모두 전달하지 않을 수는 없을까?
+ ```kotlin
+ fun <T> joinToString(
+   collection: Collection<T>,
+   separator: String,
+   prefix: String,
+   postfix: String
+ ): String {
+   val result = StringBuilder(prefix)
+   for((index, element) in collection.withIndex()) {
+      if (index > 0) result.append(separator)
+      result.append(element)
+   }
+   result.append(postfix)
+   return result.toString()
+ }
+
+ val list = listOf(1,2,3)
+ >>> println(joinToString(list, "; ", "(", ")")) // (1; 2; 3)
+ ```
+
+ ### 이름 붙인 인자
+ 코틀린으로 작성한 함수를 호출할 때는 함수에 전달하는 인자 중 일부(또는 전부)의 이름을 명시할 수 있다. 호출 시 인자 중 어느 하나라도 이름을 명시하고 나면 혼동을 막기 위해 그 뒤에 오는 모든 인자는 이름을 꼭 명시해야 한다.
+ ```kotlin
+ joinToString(collection, " ", " ", ".")
+ joinToString(collection, separator = " ", prefix = " ", postfix = ".") // 개선
+ ```
+
+ ### 디폴트 파라미터 값
+ 코틀린에서는 함수 선언에서 파라미터의 디폴트 값을 지정할 수 있으므로 이런 오버로드 중 상당수를 피할 수 있다.
+ ```kotlin
+ fun <T> joinToString (
+   collection: Collection<T>,
+   separator: String = ", ", // 디
+   prefix: String = "", // 폴
+   postfix: String = "" // 트 값이 지정된 파라미터들
+ ): String
+
+ >>> joinToString(list, ", ", "", "") // 1, 2, 3
+ >>> joinToString(list) // 1, 2, 3
+ >>> joinToString(list, "; ") // 1; 2; 3
+ ```
+
+ 이름 붙인 인자를 사용하는 경우에는 인자 목록의 중간에 있는 인자를 생략하고, 지정하고 싶은 인자를 이름을 붙여서 순서와 관계없이 지정할 수 있다.
+ ```kotlin
+ >>> joinToString(list, postfix = ";", prefix = "# ") // # 1, 2, 3;
+ ```
+
+ ### 정적인 유틸리티 클래스 없애기: 최상위 함수와 프로퍼티
+ 실전에서 어느 한 클래스에 포함시키기 어려운 코드가 많이 생긴다. 그 결과 다양한 정적 메서드를 모아두는 역할만 담당하며, 특별한 상태나 인스턴스 메서드는 없는 클래스가 생겨난다. JDK의 Collections 클래스가 전형적인 예이다. 코틀린에서는 이런 무의미한 클래스가 필요 없다. 대신 함수를 직접 소스 파일의 최상위 수준, 모든 다른 클래스의 밖에 위치시키면 된다. 그런 함수들은 여전히 그 파일의 맨 앞에 정의된 패키지의 멤버 함수이므로 다른 패키지에서 그 함수를 사용하고 싶을 때는 그 함수가 정의된 패키지를 임포트해야만 한다. 하지만 임포트 시 유틸리티 클래스 이름이 추가로 들어갈 필요는 없다.
+
+ JVM이 클래스 안에 들어있는 코드만을 실행할 수 있기 때문에 컴파일러는 이 파일을 컴파일할 때 새로운 클래스를 정의해준다. 하지만 이 함수를 자바 등의 다른 JVM 언어에서 호출하고 싶다면 코드가 어떻게 컴파일되는지 알아야 joinToString과 같은 최상위 함수를 사용할 수 있다. 어떻게 코틀린이 join.kt를 컴파일하는지 보여주기 위해 join.kt를 컴파일한 결과와 같은 클래스를 자바 코드로 써보면 다음과 같다.
+ ```kotlin
+ /* 코틀린 */
+ package strings
+ fun joinToString(...): String { ... }
+
+ /* 자바 */
+ package strings;
+ public class JoinKt {
+   public static String joinToString(...) { ... }
+ }
+ ```
+
+ 코틀린 컴파일러가 생성하는 클래스의 이름은 최상위 함수가 들어있던 코틀린 소스 파일의 이름과 대응한다. 코틀린 파일의 모든 최상위 함수는 이 클래스의 정적인 메서드가 된다. 따라서 자바에서 joinToString을 호출하기는 쉽다.
+ ```java
+ import strings.JoinKt;
+ ...
+ JoinKt.joinToString(list, ", ", "", "");
+ ```
+
+ 함수와 마찬가지로 프로퍼티도 파일의 최상위 수준에 놓을 수 있다. 이런 프로퍼티의 값은 정적 필드에 저장된다. 
+ ```kotlin
+ var opCount = 0
+ 
+ fun performOperation() {
+   opCount++
+ }
+
+ fun reportOperationCount() {
+   println("Operation performed $opCount times")
+ }
+ ```
+
+ 최상위 프로퍼티를 활용해 코드에 상수를 추가할 수 있다.
+ ```kotlin
+ val UNIX_LINE_SEPARATOR = "\n"
+ ```
+
+ 기본적으로 최상위 프로퍼티도 다른 모든 프로퍼티처럼 접근자 메서드를 통해 자바 코드에 노출된다.(val의 경우 게터, var의 경우 게터와 세터가 생긴다.) 겉으론 상수처럼 보이는데, 실제로는 게터를 사용해야 한다면 자연스럽지 못하다. 더 자연스럽게 사용하려면 이 상수를 public static final 필드로 컴파일해야 한다. const 변경자를 추가하면 프로퍼티를 public static final 필드로 컴파일하게 만들 수 있다.(단, 원시 타입과 String 타입의 프로퍼티만 const로 지정할 수 있다)
+ ```kotlin
+ const val UNIX_LINE_SEPARATOR = "\n"
+ ```
+
+ 앞의 코드는 다음 자바 코드와 동등한 바이트코드를 만들어낸다.
+ ```java
+ public static final String UNIX_LINE_SEPARATOR = "\n";
+ ```
+
+ ## 3. 메서드를 다른 클래스에 추가: 확장 함수와 확장 프로퍼티
+ 확장 함수는 어떤 클래스의 멤버 메서드인 것처럼 호출할 수 있지만 그 클래스의 밖에 선언된 함수다. 확장 함수를 만들려면 추가하려는 함수 이름 앞에 그 함수가 확장할 클래스의 이름을 덧붙이기만 하면 된다. 클래스 이름을 수신 객체 타입이라 부르며, 확장 함수가 호출되는 대상이 되는 값을 수신 객체라고 부른다.
+ ```kotlin
+ package strings
+ fun String.lastChar(): Char = this.get(this.length - 1)
+ >> println("Kotlin".lastChar()) // n
+ ```
+ 
+ 일반 메서드의 본문에서 this를 사용할 때와 마찬가지로 확장 함수 본문에도 this를 쓸 수 있다. 그리고 일반 메서드와 마찬가지로 확장 함수 본문에서도 this를 생략할 수 있다.
+ ```kotlin
+ package strings
+ fun String.lastChar(): Char = get(length - 1)
+ ```
+
+ 확장 함수 내부에서는 일반적인 인스턴스 메서드의 내부에서와 마찬가지로 수신 객체의 메서드나 프로퍼티를 바로 사용할 수 있다. 하지만 확장 함수가 캡슐화를 깨지는 않는다. 클래스 안에서 정의한 메서드와 달리 확장 함수 안에서는 클래스 내부에서만 사용할 수 있는 비공개(private) 멤버나 보호된(protected) 멤버를 사용할 수 없다.
+
+ ### 임포트와 확장 함수
+ 확장 함수를 사용하기 위해서는 그 함수를 다른 클래스나 함수와 마찬가지로 임포트해야만 한다.
+ ```kotlin
+ import strings.lastChar
+ import strings.* // *를 사용한 임포트
+
+ val c = "Kotlin".lastChar()
+
+ import strings.lastChar as last // as 키워드를 사용하면 임포트한 클래스나 함수를 다른 이름으로 부를 수 있다.
+
+ val c = "Kotlin".last()
+ ```
+
+ ### 자바에서 확장 함수 호출
+ 내부적으로 확장 함수는 수신 객체를 첫 번째 인자로 받는 정적 메서드다. 확장 함수를 호출하면서 첫 번째 인자로 수신 객체를 넘기기만 하면 된다.
+ ```java
+ char c = StringUtilKt.lastChar("Java"); // 확장 함수를 StringUtil.kt 파일에 정의
+ ```
+
+ ### 확장 함수로 유틸리티 함수 정의
+ ```kotlin
+ fun <T> Collection<T>.joinToString (
+   separator: String = ", ",
+   prefix: String = "",
+   postfix: String = ""
+ ) : String {
+   val result = StringBuilder(prefix)
+
+   for((index, element) in this.withIndex()) {
+      if(index > 0) result.append(separator)
+      result.append(element)
+   }
+   result.append(postfix)
+   return result.toString()
+ }
+ >>> val list = listOf(1,2,3)
+ >>> println(list.joinToString(separator = "; ", prefix = "(", postfix = ")")) // (1; 2; 3)
+ ```
+
+ 확장 함수는 클래스가 아닌 더 구체적인 타입을 수신 객체 타입으로 지정할 수도 있다.
+ ```kotlin
+ fun Collection<String>.join(
+   separator: String = ", ",
+   prefix: String = "",
+   postfix: String = ""
+ ) = joinToString(separator, prefix, postfix)
+
+ >>> println(listOf("one", "two", "eight").join(" ")) // one two eight
+ ```
+
+ 확장 함수가 정적 메서드와 같은 특징을 가지므로, 확장 함수를 하위 클래스에서 오버라이드할 수는 없다.
+
+ ### 확장 프로퍼티
+ 확장 프로퍼티를 사용하면 기존 클래스 객체에 대한 프로퍼티 형식의 구문으로 사용할 수 있는 API를 추가할 수 있다. 프로퍼티라는 이름으로 불리기는 하지만 상태를 저장할 적절한 방법이 없기 때문에(기존 클래스의 인스턴스 객체에 필드를 추가할 방법은 없다) 실제로 확장 프로퍼티는 아무 상태도 가질 수 없다. 하지만 프로퍼티 문법으로 더 짧게 코드를 작성할 수 있어서 편한 경우가 있다.
+ ```kotlin
+ val String.lastChar: Char
+   get() = get(length - 1)
+ ```
+
+ 확장 함수의 경우와 마찬가지로 확장 프로퍼티도 일반적인 프로퍼티와 같은데, 단지 수신 객체 클래스가 추가됐을 뿐이다. 뒷받침하는 필드(프로퍼티의 값을 저장하기 위한 필드)가 없어서 기본 게터 구현을 제공할 수 없으므로 최소한 게터는 꼭 정의를 해야 한다. 마찬가지로 초기화 코드에서 계산한 값을 담을 장소가 전혀 없으므로 초기화 코드도 쓸 수 없다.
+
+ StringBuilder에 같은 프로퍼티를 정의한다면 StringBuilder의 맨 마지막 문자는 변경 가능하므로 프로퍼티를 var로 만들 수 있다.
+ ```kotlin
+ var Stringbuilder.lastChar: Char
+   get() = get(length - 1) // 프로퍼티 게터
+   set(value: Char) {
+      this.setCharAt(length - 1, value) // 프로퍼티 세터
+   }
+ >>> println("Kotlin".lastChar) // n
+
+ >>> val sb = StringBuilder("Kotlin?")
+ >>> sb.lastChar = '!'
+ >>> println(sb) // Kotlin!
  ```
