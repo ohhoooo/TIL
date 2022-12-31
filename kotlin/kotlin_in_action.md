@@ -57,6 +57,8 @@
    1. [클래스 계층 정의](#1-클래스-계층-정의)
       1. [코틀린 인터페이스](#코틀린-인터페이스)
       2. [open, final, abstract 변경자: 기본적으로 final](#open-final-abstract-변경자-기본적으로-final)
+      3. [가시성 변경자: 기본적으로 공개](#가시성-변경자-기본적으로-공개)
+      4. [내부 클래스와 중첩된 클래스: 기본적으로 중첩 클래스](#내부-클래스와-중첩된-클래스-기본적으로-중첩-클래스)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -887,3 +889,85 @@ if(value is String) // 타입을 검사한다.
  open | 오버라이드할 수 있음 | 반드시 open을 명시해야 오버라이드할 수 있다.
  abstract | 반드시 오버라이드해야 함 | 추상 클래스의 멤버에만 이 변경자를 붙일 수 있다. 추상 멤버에는 구현이 있으면 안 된다.
  override | 상위 클래스나 상위 인스턴스의 멤버를 오버라이드하는 중 | 오버라이드하는 멤버는 기본적으로 열려있다. 하위 클래스의 오버라이드를 금지하려면 final을 명시해야 한다.
+
+ ### 가시성 변경자: 기본적으로 공개
+ 기본적으로 코틀린 가시성 변경자는 자바와 비슷하다. 자바와 같은 public, protected, private 변경자가 있다. 하지만 코틀린의 기본 가시성은 자바와 다르다. 아무 변경자도 없는 경우 선언은 모두 공개(public)된다.
+
+ 자바의 기본 가시성인 패키지 전용(package-private)은 코틀린에 없다. 코틀린은 패키지를 네임스페이스를 관리하기 위한 용도로만 사용한다. 그래서 패키지를 가시성 제어에 사용하지 않는다.
+
+ 모듈은 한 번에 한꺼번에 컴파일되는 코틀린 파일들을 의미한다. 인텔리J나 이클립스, 메이븐, 그레이들 등의 프로젝트가 모듈이 될 수 있고, 앤트 태스크가 한 번 실행될 때 함께 컴파일되는 파일의 집합도 모듈이 될 수 있다.
+
+ 변경자 | 클래스 멤버 | 최상위 선언
+ ---|---|---
+ public | 모든 곳에서 볼 수 있다. | 모든 곳에서 볼 수 있다.
+ internal | 같은 모듈 안에서만 볼 수 있다. | 같은 모듈 안에서만 볼 수 있다.
+ protected | 하위 클래스 안에서만 볼 수 있다. | (최상위 선언에 적용할 수 없음)
+ private | 같은 클래스 안에서만 볼 수 있다. | 같은 파일 안에서만 볼 수 있다.
+
+ 코틀린은 public 함수인 giveSpeech 안에서 그보다 가시성이 더 낮은(이 경우 internal) 타입인 TalkativeButton을 참조하지 못하게 하낟. 이는 어떤 클래스의 기반 타입 목록에 들어있는 타입이나 제네릭 클래스의 타입 파라미터에 들어있는 타입의 가시성은 그 클래스 자신의 가시성과 같거나 더 높아야 하고, 메서드의 시그니처에 사용된 모든 타입의 가시성은 그 메서드의 가시성과 같거나 더 높아야 한다는 더 일반적인 규칙에 해당한다.
+ ```kotlin
+ internal open class TalkativeButton : Focusable {
+   private fun yell() = println("Hey!")
+   protected fun whisper() = println("Let's talk!")
+ }
+
+ fun TalkativeButton.giveSpeech() { // 오류: "public" 멤버가 자신의 "internal" 수신 타입인 "TalkativeButton"을 노출함
+   yell() // 오류: "yell"에 접근할 수 없음: "yell"은 "TalkativeButton"의 "private" 멤버임
+   whisper() // 오류: "whisper"에 접근할 수 없음: "whisper"는 "TalkativeButton"의 "protected" 멤버임
+ }
+ ```
+
+ ### 내부 클래스와 중첩된 클래스: 기본적으로 중첩 클래스
+ 자바처럼 코틀린에서도 클래스 안에 다른 클래스를 선언할 수 있다. 클래스 안에 다른 클래스를 선언하면 도우미 클래스를 캡슐화하거나 코드 정의를 그 코드를 사용하는 곳 가까이에 두고 싶을 때 유용하다. 자바와의 차이는 코틀린의 중첩 클래스는 명시적으로 요청하지 않는 한 바깥쪽 클래스 인스턴스에 대한 접근 권한이 없다는 점이다.
+
+ ```kotlin
+ interface State: Serializable
+ 
+ interface View {
+   fun getCurrentState() : State
+   fun restoreState(state: State) { }
+ }
+ ```
+ 
+ Button 클래스의 상태를 저장하는 클래스는 Button 클래스 내부에 선언하면 편하다. 자바에서 그런 선언하는 코드는 아래와 같다.
+ ```java
+ public class Button implements View {
+   @Override
+   public State getCurrentState() {
+      return new ButtonState();
+   }
+
+   @Override
+   public void restoreState(State state) { ... }
+
+   public class ButtonState implements State { ... }
+ }
+ ```
+ 선언한 버튼의 상태를 직렬화하면 java.io.NotSerializableException: Button이라는 오류가 발생한다. 자바에서 다른 클래스 안에 정의한 클래스는 자동으로 내부 클래스가 된다. 이 예제의 ButtonState 클래스는 바깥쪽 Button 클래스에 대한 참조를 묵시적으로 포함한다. 그 참조로 인해 ButtonState를 직렬화할 수 없다. Button을 직렬화할 수 없으므로 버튼에 대한 참조가 ButtonState의 직렬화를 방해한다.
+
+ 이 문제를 해결하려면 ButtonState를 static 클래스로 선언해야 한다. 자바에서 중첩 클래스를 static으로 선언하면 그 클래스를 둘러싼 바깥쪽 클래스에 대한 묵시적인 참조가 사라진다.
+
+ 코틀린에서 중첩된 클래스가 기본적으로 동작하는 방식은 방금 설명한 것과 정반대다.
+ ```kotlin
+ class Button : View {
+   override fun getCurrentState() : State = ButtonState()
+
+   override fun restoreState(state: State) { ... }
+
+   class ButtonState : State { ... } // 이 클래스는 자바의 정적 중첩 클래스와 대응한다.
+ }
+ ```
+ 
+ 클래스 B 안에 정의된 클래스 A | 자바에서는 | 코틀린에서는
+ ---|---|---
+ 중첩 클래스(바깥쪽 클래스에 대한 참조를 저장하지 않음) | static class A | class A
+ 내부 클래스(바깥쪽 클래스에 대한 참조를 저장함) | class A | inner class A
+
+ 코틀린에서 바깥쪽 클래스의 인스턴스를 가리키는 참조를 표기하는 방법도 자바와 다르다. 내부 클래스 Inner 안에서 바깥쪽 클래스 Outer의 참조에 접근하려면 this@Outer라고 써야 한다.
+ ```kotlin
+ class Outer {
+   inner class Inner {
+      fun getOuterReference() : Outer = this@Outer
+   }
+ }
+ ```
