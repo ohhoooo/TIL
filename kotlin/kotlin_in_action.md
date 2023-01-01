@@ -971,3 +971,133 @@ if(value is String) // 타입을 검사한다.
    }
  }
  ```
+
+ ### 봉인된 클래스: 클래스 계층 정의 시 계층 확장 제한
+ 코틀린 컴파일러는 when을 사용해 Expr 타입의 값을 검사할 때 꼭 디폴트 분기인 else분기를 덧붙이게 강제한다. 
+ 
+ 이 예제의 else 분기에서는 반환할 만한 의미 있는 값이 없으므로 예외를 던진다. 항상 디폴트 분기를 추가하는 게 편하지도 않고 이런 클래스 계층에 새로운 하위클래스를 추가하더라도 컴파일러가 when이 모든 경우를 처리하는지 제대로 검사할 수 없기 때문에 경우에 따라서 심각한 버그가 발생할 수 있다.
+ ```kotlin
+ interface Expr
+ class Num(val value: Int) : Expr
+ class Sum(val left: Expr, val right: Expr) : Expr
+
+ fun eval(e: Expr) : Int =
+   when(e) {
+      is Num -> e.value
+      is Sum -> eval(e.right) + eval(e.left)
+      else -> // "else" 분기가 꼭 있어야 한다.
+         throw IllegalArgumentException("Unknown expression")
+   }
+ ```
+ 
+ 코틀린은 이런 문제에 대한 해법으로 sealed 클래스를 제공한다. 상위 클래스에 sealed 변경자를 붙이면 그 상위 클래스를 상속한 하위 클래스 정의를 제한할 수 있다. sealed 클래스의 하위 클래스를 정의할 때는 반드시 상위 클래스 안에 중첩시켜야 한다.
+ ```kotlin
+ sealed class Expr { // 기반 클래스를 sealed로 봉인한다.
+   class Num(val value: Int) : Expr() // 기반 클래스의 모든 하위 클래스를
+   class Sum(val left: Expr, val right: Expr) : Expr() // 중첩 클래스로 나열한다.
+ }
+
+ fun eval(e: Expr): Int =
+   when(e) {
+      is Expr.Num -> e.value
+      is Expr.Sum -> eval(e.right) + eval(e.left)
+   }
+ ```
+ * when 식에서 sealed 클래스의 모든 하위 클래스를 처리한다면 디폴트 분기(else 분기)가 필요 없다.
+ * sealed로 표시된 클래스는 자동으로 open이다.
+ * 내부적으로 Expr 클래스는 private 생성자를 가진다.
+
+ ## 2. 뻔하지 않은 생성자와 프로퍼티를 갖는 클래스 선언
+ 자바에서는 생성자를 하나 이상 선언할 수 있다. 코틀린은 주(primary) 생성자(보통 주 생성자는 클래스를 초기화할 때 주로 사용하는 간략한 생성자로, 클래스 본문 밖에서 정의한다)와 부(secondary) 생성자(클래스 본문 안에서 정의한다)를 구분한다. 또한 코틀린에서는 초기화 블록을 통해 초기화 로직을 추가할 수 있다. 
+
+ ### 클래스 초기화: 주 생성자와 초기화 블록
+ 클래스 이름 뒤에 오는 괄호로 둘러싸인 코드를 **주 생성자**라고 부른다.
+
+ * constructor 키워드는 주 생성자나 부 생성자 정의를 시작할 때 사용한다.
+ * init 키워드는 초기화 블록을 시작한다. 초기화 블록에는 클래스의 객체가 만들어질 때(인스턴스화될 때) 실행될 초기화 코드가 들어간다. 초기화 블록은 주 생성자와 함께 사용된다. 주 생성자는 제한적이기 때문에 별도의 코드를 포함할 수 없으므로 초기화 블록이 필요하다. 필요하다면 클래스 안에 여러 초기화 블록을 선언할 수 있다.
+ ```kotlin
+ // 가장 묵시적인 선언
+ class User(val nickname: String)
+
+ // 가장 명시적인 선언
+ class User constructor(_nickname: String) { // 파라미터가 하나만 있는 주 생성자
+   val nickname: String
+
+   init { // 초기화 블록
+      nickname = _nickname
+   }
+ }
+ ```
+
+ 이 예제에서는 nickname 프로퍼티를 초기화하는 코드를 nickname 프로퍼티 선언에 포함시킬 수 있어서 초기화 코드를 초기화 블록에 넣을 필요가 없다. 또 주 생성자 앞에 별다른 애노테이션이나 가시성 변경자가 없다면 constructor를 생략해도 된다.
+ ```kotlin
+ class User(_nickname: String) { // 파라미터가 하나뿐인 주 생성자
+   val nickname = _nickname // 프로퍼티를 주 생성자의 파라미터로 초기화한다.
+ }
+ ```
+
+ 하지만 주 생성자의 파라미터로 프로퍼티를 초기화한다면 그 주 생성자 파라미터 이름 앞에 val을 추가하는 방식으로 프로퍼티 정의와 초기화를 간략히 쓸 수 있다.
+ ```kotlin
+ class User(val nickname: String) // "val"은 이 파라미터에 상응하는 프로퍼티가 생성된다는 뜻이다.
+
+ class User(val nickname: String, val isSubscribed: Boolean = true) // 생성자 파라미터에 대한 디폴트 값을 제공한다.
+
+ >>> val hyun = User("현석") // isSubscribed 파라미터에는 디폴드 값이 쓰인다.
+ >>> println(hyun.isSubscribed) // true
+
+ >>> val gye = User("계영", false) // 모든 인자를 파라미터 선언 순서대로 지정할 수도 있다.
+ >>> println(gye.isSubscribed) // false
+
+ >>> val hey = User("혜원", isSubscribed = false) // 생성자 인자 중 일부에 대해 이름을 지정할 수도 있다.
+ >>> println(hey.isSubscribed) // false
+ ```
+
+ 클래스에 기반 클래스가 있다면 주 생성자에서 기반 클래스의 생성자를 호출해야 할 필요가 있다. 기반 클래스를 초기화하려면 기반 클래스 이름 뒤에 괄호를 치고 생성자 인자를 넘긴다.
+ ```kotlin
+ open class User(val nickname: String) { ... }
+ class TwitterUser(nickname: String) : User(nickname) { ... }
+ ```
+
+ 클래스를 정의할 때 별도로 생성자를 정의하지 않으면 컴파일러가 자동으로 아무 일도 하지 않는 인자가 없는 디폴트 생성자를 만들어준다.
+ ```kotlin
+ open class Button // 인자가 없는 디폴트 생성자가 만들어진다.
+ ```
+
+ Button의 생성자는 아무 인자도 받지 않지만, Button 클래스를 상속한 하위 클래스는 반드시 Button 클래스의 생성자를 호출해야 한다.
+ ```kotlin
+ class RadioButton : Button()
+ ```
+
+ 이 규칙으로 인해 기반 클래스의 이름 뒤에는 꼭 빈 괄호가 들어간다. 반면 인터페이스는 생성자가 없기 때문에 어떤 클래스가 인터페이스를 구현하는 경우 그 클래스의 상위 클래스 목록에 있는 인터페이스 이름 뒤에는 아무 괄호도 없다. 클래스 정의에 있는 상위 클래스 및 인터페이스 목록에서 이름 뒤에 괄호가 붙었는지 살펴보면 쉽게 기반 클래스와 인터페이스를 구별할 수 있다.
+
+ 어떤 클래스를 클래스 외부에서 인스턴스화하지 못하게 막고 싶다면 모든 생성자를 private으로 만들면 된다. Secretive 클래스 안에는 주 생성자밖에 없고 그 주 생성자는 비공개이므로 외부에서는 Secretive를 인스턴스화할 수 없다.
+ ```kotlin
+ class Secretive private constructor() { } // 이 클래스의 (유일한) 주 생성자는 비공개다.
+ ```
+
+ ### 부 생성자: 상위 클래스를 다른 방식으로 초기화
+ 자바에서 선언된 생성자가 2개인 View 클래스가 있다고 할 때, 그 클래스를 코틀린으로는 다음과 비슷하게 정의할 수 있다. 이 클래스는 주 생성자를 선언하지 않고(클래스 헤더에 있는 클래스 이름 뒤에 괄호가 없다), 부 생성자만 2가지 선언한다. 부 생성자는 constructor 키워드로 시작한다.
+ ```kotlin
+ open class View {
+   constructor(ctx: Context) { ... } // 부 생성자
+   constructor(ctx: Context, attr: AttributeSet) { ... } // 부 생성자
+ }
+ ```
+
+ 클래스를 확장하면서 똑같이 부 생성자를 정의할 수 있다. 여기서 두 부 생성자는 super() 키워드를 통해 자신에 대응하는 상위 클래스 생성자를 호출한다.
+ ```kotlin
+ class MyButton : View {
+   constructor(ctx: Context) : super(ctx) { ... } // 상위 클래스의
+   constructor(ctx: Context, attr: AttributeSet) : super(ctx, attr) { ... } // 생성자를 호출한다.
+ }
+ ```
+
+ 자바와 마찬가지로 생성자에서 this()를 통해 클래스 자신의 다른 생성자를 호출할 수 있다.
+ ```kotlin
+ class MyButton : View {
+   constructor(ctx: Context) : this(ctx, MY_STYLE) { ... }
+   constructor(ctx: Context, attr: AttributeSet) : super(ctx, attr) { ... }
+ }
+ ```
+
+ 클래스에 주 생성자가 없다면 모든 부 생성자는 반드시 상위 클래스를 초기화하거나 다른 생성자에게 생성을 위임해야 한다. 각 부 생성자에서 객체 생성을 위임하는 화살표를 따라가면 그 끝에서는 상위 클래스 생성자를 호출해야 한다.
