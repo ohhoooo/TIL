@@ -63,6 +63,12 @@
    2. [뻔하지 않은 생성자와 프로퍼티를 갖는 클래스 선언](#2-뻔하지-않은-생성자와-프로퍼티를-갖는-클래스-선언)
       1. [클래스 초기화: 주 생성자와 초기화 블록](#클래스-초기화-주-생성자와-초기화-블록)
       2. [부 생성자: 상위 클래스를 다른 방식으로 초기화](#부-생성자-상위-클래스를-다른-방식으로-초기화)
+      3. [인터페이스에 선언된 프로퍼티 구현](#인터페이스에-선언된-프로퍼티-구현)
+      4. [게터와 세터에서 뒷받침하는 필드에 접근](#게터와-세터에서-뒷받침하는-필드에-접근)
+      5. [접근자의 가시성 변경](#접근자의-가시성-변경)
+    3. [컴파일러가 생성한 메서드: 데이터 클래스와 클래스 위임](#3-컴파일러가-생성한-메서드-데이터-클래스와-클래스-위임)
+        1. [모든 클래스가 정의해야 하는 메서드](#모든-클래스가-정의해야-하는-메서드)
+        2. [데이터 클래스: 모든 클래스가 정의해야 하는 메서드 자동 생성](#데이터-클래스-모든-클래스가-정의해야-하는-메서드-자동-생성)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -1105,3 +1111,125 @@ if(value is String) // 타입을 검사한다.
  ```
 
  클래스에 주 생성자가 없다면 모든 부 생성자는 반드시 상위 클래스를 초기화하거나 다른 생성자에게 생성을 위임해야 한다. 각 부 생성자에서 객체 생성을 위임하는 화살표를 따라가면 그 끝에서는 상위 클래스 생성자를 호출해야 한다.
+
+ ### 인터페이스에 선언된 프로퍼티 구현
+ 코틀린에서는 인터페이스에 추상 프로퍼티 선언을 넣을 수 있다.
+ ```kotlin
+ interface User {
+  val nickname: String
+ }
+ ```
+
+ 이는 User 인터페이스를 구현하는 클래스가 nickname의 값을 얻을 수 있는 방법을 제공해야 한다는 뜻이다. 인터페이스에 있는 프로퍼티 선언에는 뒷받침하는 필드나 게터 등의 정보가 들어있지 않다. 인터페이스는 아무 상태도 포함할 수 없으므로 상태를 저장할 필요가 있다면 인터페이스를 구현한 하위 클래스에서 상태 저장을 위한 프로퍼티 등을 만들어야 한다.
+ ```kotlin
+ class PrivateUser(override val nickname: String) : User // 주 생성자에 있는 프로퍼티
+
+ class SubscribingUser(val email: String) : User {
+  override val nickname: String
+    get() = email.substringBefore('@') // 커스텀 게터
+ }
+
+ class FacebookUser(val accountId: Int) : User {
+  override val nickname = getFacebookName(accountId) // 프로퍼티 초기화 식
+ }
+
+ >>> println(PrivateUser("test@kotlinlang.org").nickname) // test@kotlinlang.org
+ >>> println(SubscribingUser("test@kotlinlang.org").nickname) // test
+ ```
+ 
+ 인터페이스에는 추상 프로퍼티뿐 아니라 게터와 세터가 있는 프로퍼티를 선언할 수도 있다. 물론 그런 게터와 세터는 뒷받침하는 필드를 참조할 수 없다. 추상 프로퍼티인 email을 반드시 오버라이드해야 한다. 반면 nickname은 오버라이드 하지 않고 상속할 수 있다.
+ ```kotlin
+ interface User {
+  val email: String
+  val nickname: String
+    get() = email.substringBefore('@') // 프로퍼티에 뒷받침하는 필드가 없다. 대신 매번 결과를 계산해 돌려준다.(커스텀 게터)
+ }
+ ```
+
+ ### 게터와 세터에서 뒷받침하는 필드에 접근
+ 프로퍼티의 두 가지 유형(값을 저장하는 프로퍼티와 커스텀 접근자에서 매번 값을 계산 하는 프로퍼티)를 조합해서 어떤 값을 저장하되 그 값을 변경하거나 읽을 때마다 정해진 로직을 실행하는 유형의 프로퍼티를 만드는 방법에 대한 예시 코드이다. 커스텀 세터를 정의해서 추가 로직을 실행한다.
+ ```kotlin
+ class User(val name: String) {
+  var address: String = "unspecified"
+    set(value: String) {
+      println("""
+        Address was changed for $name:
+        "$field" -> "$value".""".trimIndent()) // 뒷받침하는 필드 값 읽기
+      field = value // 뒷받침하는 필드 값 변경하기
+    }
+ }
+ >>> val user = User("Alice")
+ >>> user.address = "Elsenheimerstrasse 47, 80687 Muenchen"
+ Address was changed for Alice: "unspecified" -> "Elsenheimerstrasse 47, 80687 Muenchen"
+ ```
+ 접근자의 본문에서는 field라는 특별한 식별자를 통해 뒷받침하는 필드에 접근할 수 있다.
+
+ 뒷받침하는 필드가 있는 프로퍼티와 그런 필드가 없는 프로퍼티는 클래스의 프로퍼티를 사용하는 쪽에서 프로퍼티를 읽는 방법이나 쓰는 방법은 뒷받침하는 필드의 유무와는 관계가 없다. 컴파일러는 디폴드 접근자 구현을 사용하건 직접 게터나 세터를 정의하건 관계없이 게터나 세터에서 field를 사용하는 프로퍼티에 대해 뒷받침하는 필드를 생성해준다. 다만 field를 사용하지 않는 커스텀 접근자 구현을 정의한다면 뒷받침하는 필드는 존재하지 않는다.
+
+ ### 접근자의 가시성 변경
+ 접근자의 가시성은 기본적으로는 프로퍼티의 가시성과 같다. 하지만 원한다면 get이나 set 앞에 가시성 변경자를 추가해서 접근자의 가시성을 변경할 수 있다.
+ ```kotlin
+ class LengthCounter {
+  var counter: Int = 0
+    private set // 이 클래스 밖에서 이 프로퍼티의 값을 바꿀 수 없다.
+
+  fun addWord(word: String) {
+    counter += word.length
+  }
+ }
+ >>> val lengthCounter = LengthCounter()
+ >>> lengthCounter.addWord("Hi!")
+ >>> println(lengthCounter.counter) // 3
+ ```
+
+ ## 3. 컴파일러가 생성한 메서드: 데이터 클래스와 클래스 위임
+ 
+ ### 모든 클래스가 정의해야 하는 메서드
+ 자바와 마찬가지로 코틀린 클래스도 toString, equals, hashCode 등을 오버라이드 할 수 있다. 코틀린은 이런 메서드 구현을 자동으로 생성해줄 수 있다.
+
+ #### 문자열 표현: toString()
+
+ : 기본 제공되는 객체의 문자열 표현은 Client@5e9f23b4 같은 방식인데, 이는 그다지 유용하지 않다. 이 기본 구현을 바꾸려면 toString 메서드를 오버라이드해야 한다.
+
+ #### 객체의 동등성: equals()
+
+ : 자바에서의 ==는 원시 타입일 경우 두 피연산자의 값이 같은지 비교한다(동등성). 반면 참조 타입일 경우 두 피연산자의 주소가 같은지를 비교한다. 따라서 자바에서는 두 객체의 동등성을 알려면 equals를 호출해야 한다. 코틀린에서는 == 연산자가 두 객체를 비교하는 기본적인 방법이다. == 는 내부적으로 equals를 호출해서 객체를 비교한다. 따라서 클래스가 equals를 오버라이드하면 == 를 통해 안전하게 그 클래스의 인스턴스를 비교할 수 있다. 참조 비교를 위해서는 === 연산자를 사용할 수 있다.
+
+ #### 해시 컨테이너: hashCode()
+
+ : 자바에서는 equals를 오버라이드할 때 반드시 hashCode도 함께 오버라이드해야 한다. JVM 언어에서는 hashCode가 지켜야 하는 "equals()가 true를 반환하는 두 객체는 반드시 같은 hashCode()를 반환해야 한다."라는 제약이 있다.
+ 
+ ```kotlin
+ class Client(val name: String, val postalCode: Int) {
+  override fun toString() = "Client(name=$name, postalCode=$postalCode)"
+
+  override fun equals(other: Any?) : Boolean {
+    if (other == null || other !is Client)
+      return false
+    return name == other.name && postalCode == other.postalCode
+  }
+
+  override fun hashCode() : Int = name.hashCode() * 31 + postalCode
+ }
+ >>> val client1 = Client("오현석", 4122)
+ >>> println(client1) // Client(name=오현석, postalCode=4122)
+ ```
+
+ 코틀린 컴파일러는 이 모든 메서드를 자동으로 생성해줄 수 있다.
+
+ ### 데이터 클래스: 모든 클래스가 정의해야 하는 메서드 자동 생성
+ 어떤 클래스가 데이터를 저장하는 역할만을 수행한다면 toString, equals, hashCode를 반드시 오버라이드해야 한다. 다행이 IDE는 자동으로 그런 메서드를 정의해준다. 코틀린에서는 data라는 변경자를 클래스 앞에 붙이면 필요한 메서드를 컴파일러가 자동으로 만들어준다. data 변경자가 붙은 클래스를 데이터 클래스라고 부른다.
+ ```kotlin
+ data class Client(val name: String, val postalCode: Int)
+ ```
+ data class는 자바에서 요구하는 모든 메서드를 포함한다.
+ * 인스턴스 간 비교를 위한 equals
+ * HashMap과 같은 해시 기반 컨테이너에서 키로 사용할 수 있는 hashCode
+ * 클래스의 각 필드를 선언 순서대로 표시하는 문자열 표현을 만들어주는 toString
+
+ 코틀린 컴파일러는 data 클래스에게 방금 말한 세 메서드뿐 아니라 몇 가지 유용한 메서드를 더 생성해준다. 하나는 바로 밑에서 설명하고 나머지 하나는 구조 분해 선언인데 이것은 뒤에서 설명한다.
+
+ #### 데이터 클래스와 불변성: copy() 메서드
+ 데이터 클래스의 프로퍼티가 꼭 val일 필요는 없다. 원한다면 var 프로퍼티를 써도 된다. 하지만 데이터 클래스의 모든 프로퍼티를 읽기 전용으로 만들어서 데이터 클래스를 불변 클래스로 만들라고 권장한다.
+
+ 데이터 클래스 인스턴스를 불변 객체로 더 쉽게 활용할 수 있게 코틀린 컴파일러는 객체를 복사하면서 일부 프로퍼티를 바꿀 수 있게 해주는 copy 메서드를 제공한다.
