@@ -69,6 +69,11 @@
     3. [컴파일러가 생성한 메서드: 데이터 클래스와 클래스 위임](#3-컴파일러가-생성한-메서드-데이터-클래스와-클래스-위임)
         1. [모든 클래스가 정의해야 하는 메서드](#모든-클래스가-정의해야-하는-메서드)
         2. [데이터 클래스: 모든 클래스가 정의해야 하는 메서드 자동 생성](#데이터-클래스-모든-클래스가-정의해야-하는-메서드-자동-생성)
+        3. [클래스 위임: by 키워드 사용](#클래스-위임-by-키워드-사용)
+    4. [object 키워드: 클래스 선언과 인스턴스 생성](#4-object-키워드-클래스-선언과-인스턴스-생성)
+        1. [객체 선언: 싱글턴을 쉽게 만들기](#객체-선언-싱글턴을-쉽게-만들기)
+        2. [동반 객체: 팩토리 메서드와 정적 멤버가 들어갈 장소](#동반-객체-팩토리-메서드와-정적-멤버가-들어갈-장소)
+        3. [동반 객체를 일반 객체처럼 사용](#동반-객체를-일반-객체처럼-사용)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -1233,3 +1238,189 @@ if(value is String) // 타입을 검사한다.
  데이터 클래스의 프로퍼티가 꼭 val일 필요는 없다. 원한다면 var 프로퍼티를 써도 된다. 하지만 데이터 클래스의 모든 프로퍼티를 읽기 전용으로 만들어서 데이터 클래스를 불변 클래스로 만들라고 권장한다.
 
  데이터 클래스 인스턴스를 불변 객체로 더 쉽게 활용할 수 있게 코틀린 컴파일러는 객체를 복사하면서 일부 프로퍼티를 바꿀 수 있게 해주는 copy 메서드를 제공한다.
+
+ ### 클래스 위임: by 키워드 사용
+ 하위 클래스가 상위 클래스의 메서드 중 일부를 오버라이드 하면 하위 클래스는 상위 클래스의 세부 구현 사항에 의존하게 된다. 시스템이 변함에 따라 상위 클래스의 구현이 바뀌거나 상위 클래스에 새로운 메서드가 추가된다. 그 과정에서 하위 클래스가 상위 클래스에 대해 갖고 있던 가정이 깨져서 코드가 정상적으로 작동하지 못하는 경우가 생길 수 있다. 그래서 코틀린을 설계할 때 기본적으로 클래스를 final로 취급하기로 설계했다.
+ 
+ 하지만 종종 상속을 허용하지 않는 클래스에 새로운 동작을 추가해야 할 때가 있다. 이럴 때 사용하는 일반적인 방법이 **데코레이터(Decorator) 패턴**이다. 이 패턴의 핵심은 **상속을 허용하지 않는 클래스(기존 클래스) 대신 사용할 수 있는 새로운 클래스(데코레이터)를 만들되 기존 클래스와 같은 인터페이스를 데코레이터가 제공하게 만들고, 기존 클래스를 데코레이터 내부에 필드로 유지하는 것이다. 이때 새로 정의해야 하는 기능은 데코레이터의 메서드에 새로 정의하고(물론 이때 기존 클래스의 메서드나 필드를 활용할 수도 있다) 기존 기능이 그대로 필요한 부분은 데코레이터의 메서드가 기존 클래스의 메서드에게 요청을 전달한다.**
+
+ 이런 접근 방법의 단점은 준비 코드가 상당히 많이 필요하다는 점이다. 예를 들어 Collection 같이 비교적 단순한 인터페이스를 구현하면서 아무 동작도 변경하지 않는 데코레이터를 만들 때조차도 다음과 같이 복잡한 코드를 사용해야 한다.
+ ```kotlin
+ class DelegatingCollection<T> : Collection<T> {
+  private val innerList = arrayListOf<T>()
+
+  override val size: Int get() = innerList.size
+  override fun isEmpty() : Boolean = innerList.isEmpty()
+  override fun contains(element: T) : Boolean = innerList.contains(element)
+  override fun iterator() : Iterator<T> = innerList.iterator()
+  override fun containsAll(elements: Collection<T>) : Boolean = innerList.containsAll(elements)
+ }
+ ```
+
+ 이러한 위임을 언어가 제공하는 일급 시민 기능으로 지원한다. 인터페이스를 구현할 때 by 키워드를 통해 그 인터페이스에 대한 구현을 다른 객체에 위임 중이라는 사실을 명시할 수 있다.
+ ```kotlin
+ class DelegatingCollection<T>(innerList: Collection<T> = ArrayList<T>()) : Collection<T> by innerList {}
+ ```
+
+ 메서드 중 일부의 동작을 변경하고 싶은 경우 메서드를 오버라이드하면 컴파일러가 생성한 메서드 대신 오버라이드한 메서드가 쓰인다. 기존 클래스의 메서드에 위임하는 기본 구현으로 충분한 메서드는 따로 오버라이드할 필요가 없다.
+ ```kotlin
+ class CountingSet<T>(
+  val innerSet: MutableCollection<T> = HashSet<T>()
+ ) : MutableCollection<T> by innerSet { // MutableCollection의 구현을 innerSet에게 위임한다.
+  var objectsAdded = 0
+
+  override fun add(element: T): Boolean { // 이 두 메서드는 위임하지 않고
+    objectsAdded++
+    return innerSet.add(element)
+  }
+
+  override fun addAll(c: Collection<T>): Boolean { // 새로운 구현을 제공한다.
+    objectAdded += c.size
+    return innerSet.addAll(c)
+  }
+ }
+ >>> val cset = CountingSet<Int>()
+ >>> cset.addAll(listOf(1, 1, 2))
+ >>> println("${cset.objectsAdded} objects were added, ${cset.size} remain") // 3 objects were added, 2 remain
+ ```
+
+ ## 4. object 키워드: 클래스 선언과 인스턴스 생성
+ 코틀린에서는 object 키워드를 다양한 상황에서 사용하지만 모든 경우 클래스를 정의 하면서 동시에 인스턴스(객체)를 생성한다는 공통점이 있다.
+ * 객체 선언은 싱글턴을 정의하는 방법 중 하나다.
+ * 동반 객체는 인스턴스 메서드는 아니지만 어떤 클래스와 관련 있는 메서드와 팩토리 메서드를 담을 때 쓰인다. 동반 객체 메서드에 접근할 때는 동반 객체 포함된 클래스의 이름을 사용할 수 있다.
+ * 객체 식은 자바의 무명 내부 클래스 대신 쓰인다.
+
+ ### 객체 선언: 싱글턴을 쉽게 만들기
+ 코틀린은 **객체 선언** 기능을 통해 싱글턴을 언어에서 기본 지원한다. 객체 선언은 클래스 선언과 그 클래스에 속한 **단일 인스턴스**의 선언을 합친 선언이다.
+ ```kotlin
+ object Payroll {
+  val allEmployees = arrayListOf<Person>()
+
+  fun calculateSalary() {
+    for(person in allEmployees) { ... }
+  }
+ }
+ ```
+ 객체 선언은 object 키워드로 시작한다. 객체 선언은 클래스를 정의하고 그 클래스의 인스턴스를 만들어서 변수에 저장하는 모든 작업을 단 한 문장으로 처리한다. 클래스와 마찬가지로 객체 선언 안에도 프로퍼티, 메서드, 초기화 블록 등이 들어갈 수 있다. 하지만 생성자는(주 생성자와 부 생성자 모두) 객체 선언에 쓸 수 없다. 일반 클래스 인스턴스와 달리 싱글턴 객체는 객체 선언문이 있는 위치에서 생성자 호출 없이 즉시 만들어진다. 따라서 객체 선언에는 생성자 정의가 필요 없다.
+
+ 변수와 마찬가지로 객체 선언에 사용한 이름 뒤에 마침표(.)를 붙이면 객체에 속한 메서드나 프로퍼티에 접근할 수 있다.
+ ```kotlin
+ Payroll.allEmployees.add(Person(...))
+ Payroll.calculateSalary()
+ ```
+
+ 객체 선언도 클래스나 인터페이스를 상속할 수 있다. 예시로 java.util.Comparator 인터페이스에서 Comparator 안에는 데이터를 저장할 필요가 없다. 따라서 어떤 클래스에 속한 객체를 비교할 때 사용하는 Comparator는 보통 클래스마다 단 하나씩만 있으면 된다. 따라서 Comparator 인스턴스를 만드는 방법으로는 객체 선언이 가장 좋은 방법이다.
+ ```kotlin
+ object CaseInsensitiveFileComparator : Comparator<File> {
+  override fun compare(file1: File, file2: File): Int {
+    return file1.path.compareTo(file2.path, ignoreCase = true)
+  }
+ }
+ >>> println(CaseInsensitiveFileComparator.compare(File("/User"), File("/user"))) // 0
+ ```
+
+ 일반 객체(클래스의 인스턴스)를 사용할 수 있는 곳에서는 항상 싱글턴 객체를 사용할 수 있다. 예를 들어 이 객체를 Comparator를 인자로 받는 함수에게 인자로 넘길 수 있다.
+ ```kotlin
+ >>> val files = listOf(File("/Z"), File("/a"))
+ >>> println(files.sortedWith(CaseInsensitiveFileComparator)) // [/a, /Z]
+ ```
+
+ 클래스 안에서 객체를 선언할 수도 있다. 그런 객체도 인스턴스는 단 하나뿐이다(바깥 클래스의 인스턴스마다 중첩 객체 선언에 해당하는 인스턴스가 하나씩 따로 생기는 것이 아니다). 예를 들어 어떤 클래스의 인스턴스를 비교하는 Comparator를 클래스 내부에 정의하는게 더 바람직하다.
+ ```kotlin
+ data class Person(val name: String) {
+  object NameComparator : Comparator<Person> {
+    override fun compare(p1: Person, p2: Person): Int = p1.name.compareTo(p2.name)
+  }
+ }
+ >>> val persons = listOf(Person("Bob"), Person("Alice"))
+ >>> println(persons.sortedWith(Person.NameComparator)) // [Person(name=Alice), Person(name=Bob)]
+ ```
+
+ ### 동반 객체: 팩토리 메서드와 정적 멤버가 들어갈 장소
+ 코틀린 클래스 안에는 정적인 멤버가 없다. 코틀린 언어는 자바 static 키워드를 지원하지 않는다. 그 대신 코틀린에서는 패키지 수준의 최상위 함수(자바의 정적 메서드 역할을 거의 대신 할 수 있다)와 객체 선언(자바의 정적 메서드 역할 중 코틀린 최상위 함수가 대신할 수 없는 역할이나 정적 필드를 대신할 수 있다)을 활용한다. 대부분의 경우 최상위 함수를 활용하는 편을 더 권장한다. 하지만 최상위 함수는 private으로 표시된 클래스 비공개 멤버에 접근할 수 없다. 그래서 클래스의 인스턴스와 관계없이 호출해야 하지만, 클래스 내부 정보에 접근해야 하는 함수가 필요할 때는 클래스에 중첩된 객체 선언의 멤버 함수로 정의해야 한다. 그런 함수의 대표적인 예로 팩토리 메서드를 들 수 있다.
+
+ 클래스 안에 정의된 객체 중 하나에 `companion`이라는 특별한 표시를 붙이면 그 클래스의 동반 객체로 만들 수 있다. 동반 객체의 프로퍼티나 메서드에 접근하려면 그 동반 객체가 정의된 클래스 이름을 사용한다. 이때 객체의 이름을 따로 지정할 필요가 없다. 그 결과 **동반 객체의 멤버를 사용하는 구문은 자바의 정적 메서드 호출이나 정적 필드 사용 구문과 같아진다.**
+ ```kotlin
+ class A {
+  companion object {
+    fun bar() {
+      println("Companion object called")
+    }
+  }
+ }
+ >>> A.bar() // Companion object called
+ ```
+
+ 동반 객체는 자신을 둘러싼 클래스의 모든 private 멤버에 접근할 수 있다. 따라서 동반 객체는 private 생성자를 호출하기 좋은 위치다. 따라서 동반 객체는 **팩토리 패턴**을 구현하기 가장 적합한 위치다.
+
+ 부 생성자가 2개 있는 클래스의 예시와 그 클래스를 동반 객체 안에서 팩토리 클래스를 정의하는 예시이다.
+ ```kotlin
+ class User {
+  val nickname: String
+
+  constructor(email: String) {
+    nickname = email.substringBefore('@')
+  }
+
+  constructor(facebookAccountId: Int) {
+    nickname = getFacebookName(facebookAccountId)
+  }
+ }
+ ```
+
+ 아래의 예시 구현에서는 생성자를 통해 User 인스턴스를 만들 수 없고 팩토리 메서드를 통해야만 한다.
+ ```kotlin
+ class User private constructor(val nickname: String) { // 주 생성자를 비공개로 만든다.
+  companion object { // 동반 객체를 선언한다.
+    fun newSubscribingUser(email: String) = User(email.substringBefore('@'))
+    fun newFacebookUser(accountId: Int) = // 페이스북 사용자 ID로 사용자를 만드는 팩토리 메서드
+      User(getFacebookName(accountId))
+  }
+ }
+ >>> val subscribingUser = User.newSubscribingUser("bob@gmail.com")
+ >>> val facebookUser = User.newFacebookUser(4)
+ >>> println(subscribingUser.nickname) // bob
+ ```
+
+ 팩토리 메서드는 매우 유용하다.
+ * 목적에 따라 팩토리 메서드 이름을 정할 수 있다.
+ * 팩토리 메서드가 선언된 클래스의 하위 클래스 객체를 반환할 수도 있다.
+ * 팩토리 메서드는 생성할 필요가 없는 객체를 생성하지 않을 수도 있다. 예를 들어 이메일 주소별로 유일한 User 인스턴스를 만드는 경우 팩토리 메서드가 이미 존재하는 인스턴스에 해당하는 이메일 주소를 전달받으면 새 인스턴스를 만들지 않고 캐시에 있는 기존 인스턴스를 반환할 수 있다.
+
+ 하지만 클래스를 확장해야만 하는 경우에는 동반 객체 멤버를 하위 클래스에서 오버라이드 할 수 없으므로 여러 생성자를 사용하는 편이 더 나은 해법이다.
+
+ ### 동반 객체를 일반 객체처럼 사용
+ 동반 객체는 클래스 안에 정의된 일반 객체다. 따라서 동반 객체에 이름을 붙이거나, 동반 객체가 인터페이스를 상속하거나, 동반 객체 안에 확장 함수와 프로퍼티를 정의할 수 있다.
+ ```kotlin
+ class Person(val name: String) {
+  companion object Loader { // 동반 객체에 이름을 붙인다.
+    fun fromJSON(jsonText: String): Person = ...
+  }
+ }
+ >>> person = Person.Loader.fromJSON("{name: 'Dmitry'}")
+ >>> person.name // Dmitry
+ >>> person2 = Person.fromJSON("{name: 'Brent'}")
+ >>> person2.name // Brent
+ ```
+
+ #### 동반 객체에서 인터페이스 구현
+ 인터페이스를 구현하는 동반 객체를 참조할 때 객체를 둘러싼 클래스의 이름을 바로 사용할 수 있다.
+ ```kotlin
+ interface JSONFactory<T> {
+  fun fromJSON(jsonText: String): T
+ }
+
+ class Person(val name: String) {
+  companion object : JSONFactory<Person> {
+    override fun fromJSON(jsonText: String): Person = ... // 동반 객체가 인터페이스를 구현한다.
+  }
+ }
+ ```
+
+ JSON으로부터 각 원소를 다시 만들어내는 추상 팩토리가 있다면 Person 객체를 그 팩토리에게 넘길 수 있다.
+ ```kotlin
+ fun loadFromJSON<T>(factory: JSONFactory<T>): T {
+  ...
+ }
+ loadFromJSON(Person) // 동반 객체의 인스턴스를 함수에 넘긴다.
+ ```
