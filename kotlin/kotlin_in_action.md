@@ -87,6 +87,9 @@
           2. [all, any, count, find: 컬렉션에 술어 적용](#all-any-count-find-컬렉션에-술어-적용)
           3. [groupBy: 리스트를 여러 그룹으로 이뤄진 맵으로 변경](#groupby-리스트를-여러-그룹으로-이뤄진-맵으로-변경)
           4. [flatMap과 flatten: 중첩된 컬렉션 안의 원소 처리](#flatmap과-flatten-중첩된-컬렉션-안의-원소-처리)
+      3. [지연 계산(lazy) 컬렉션 연산](#3-지연-계산lazy-컬렉션-연산)
+          1. [시퀸스 연산 실행: 중간 연산과 최종 연산](#시퀸스-연산-실행-중간-연산과-최종-연산)
+          2. [시퀸스 만들기](#시퀸스-만들기)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -1804,6 +1807,92 @@ if(value is String) // 타입을 검사한다.
                         Book("Good Omens", listOf("Terry Pratchett", "Neil Gaiman")))
  >>> println(books.flatMap { it.authors }.toSet()) // books 컬렉션에 있는 책을 쓴 모든 저자의 집합
  // [Jasper Fforde, Terry Pratchett, Neil Gaiman]
-```
+ ```
+ 
+ 리스트의 리스트가 있는데 모든 중첩된 리스트의 원소를 한 리스트로 모아야 한다면 flatMap을 떠올릴 수 있다. 하지만 특별히 변환해야 할 내용이 없다면 리스트의 리스트를 평평하게 펼치기만 하면 된다. 그런 경우 listOfLists.flatten() 처럼 flatten 함수를 사용할 수 있다.
 
-리스트의 리스트가 있는데 모든 중첩된 리스트의 원소를 한 리스트로 모아야 한다면 flatMap을 떠올릴 수 있다. 하지만 특별히 변환해야 할 내용이 없다면 리스트의 리스트를 평평하게 펼치기만 하면 된다. 그런 경우 listOfLists.flatten() 처럼 flatten 함수를 사용할 수 있다.
+ ## 3. 지연 계산(lazy) 컬렉션 연산
+ 앞 절의 map이나 filter 같은 몇 가지 컬렉션 함수들은 결과 컬렉션을 즉시 생성한다. 이는 컬렉션 함수를 연쇄하면 매 단계마다 계산 중간 결과를 새로운 컬렉션에 임시로 담는다는 말이다. **시퀸스**를 사용하면 **중간 임시 컬렉션을 사용하지 않고도 컬렉션 연산을 연쇄**할 수 있다.
+
+ 코틀린 표준 라이브러리 참조 문서에는 filter와 map이 리스트를 반환한다고 써 있다. 이는 이 연쇄 호출이 리스트를 2개 만든다는 뜻이다.
+ ```kotlin
+ people.map(Person::name).filter { it.startsWith("A") }
+ ```
+
+ 이를 더 효율적으로 만들기 위해서는 각 연산이 컬렉션을 직접 사용하는 대신 시퀸스를 사용하게 만들어야 한다. 중간 결과를 저장하는 컬렉션이 생기지 않기 때문에 원소가 많은 경우 성능이 눈에 띄게 좋아진다.
+ ```kotlin
+ people.asSequence() // 원본 컬렉션을 시퀸스로 변환한다.
+    .map(Person::name) // 시퀸스도 컬렉션과
+    .filter { it.startsWith("A") } // 똑같은 API를 제공한다.
+    .toList() // 결과 시퀸스를 다시 리스트로 변환한다.
+ ```
+
+ 코틀린 지연 계산 시퀸스는 Sequence 인터페이스에서 시작한다. 이 인터페이스는 단지 한 번에 하나씩 열거될 수 있는 원소의 시퀸스를 표현할 뿐이다. Sequence 안에는 iterator라는 단 하나의 메서드가 있다. 그 메서드를 통해 시퀸스로부터 원소 값을 얻을 수 있다.
+
+ Sequence 인터페이스의 강점은 그 인터페이스 위에 구현된 연산이 계산을 수행하는 방법 때문에 생긴다. 시퀸스의 원소는 필요할 때 비로소 계산된다. 따라서 중간 처리 결과를 저장하지 않고도 연산을 연쇄적으로 적용해서 효율적으로 계산을 수행할 수 있다.
+
+ asSequence 확장 함수를 호출하면 어떤 컬렉션이든 시퀸스로 바꿀 수 있다. 시퀸스를 리스트로 만들 때는 toList를 사용한다.
+
+ 시퀸스의 원소를 차례로 이터레이션해야 한다면 시퀸스를 직접 써도 된다(리스트로 변환하지 않아도 된다). 하지만 **시퀸스 원소를 인덱스를 사용해 접근하는 등의 다른 API 메서드가 필요하다면 시퀸스를 리스트로 변환해야 한다.**
+ 
+ 시퀸스에 대한 연산을 지연 계산하기 때문에 정말 계산을 실행하게 만들려면 최종 시퀸스의 원소를 하나씩 이터레이션하거나 최종 시퀸스를 리스트로 변환해야 한다.
+
+ ### 시퀸스 연산 실행: 중간 연산과 최종 연산
+ * 중간 연산 : 다른 시퀸스를 반환한다. 그 시퀸스는 최초 시퀸스의 원소를 변환하는 방법을 안다.
+ * 최종 연산 : 결과를 반환한다. 결과는 최초 컬렉션에 대해 변환을 적용한 시퀸스로부터 일련의 계산을 수행해 얻을 수 있는 컬렉션이나 원소, 숫자 또는 객체다.
+ ```kotlin
+ sequence.map { ... }.filter { ... }.toList()
+ 
+ map { ... } // 중간 연산
+ filter { ... } // 중간 연산
+ toList() // 최종 연산
+ ```
+
+ **중간 연산은 항상 지연 계산된다.** 마지막에 최종 연산(여기서는 toList)을 호출하지 않고 중간 연산(여기서는 map, filter)으로만 이루어진 코드를 실행하면 아무 내용도 출력되지 않는다. 최종 연산을 호출하면 연기됐던 모든 계산이 수행된다.
+ ```kotlin
+ >>> listOf(1, 2, 3, 4).asSequence()
+              .map { print("map($it) "); it * it } // 중간 연산
+              .filter { print("filter($it) "); it % 2 == 0 } // 중간 연산
+              .toList() // 최종 연산
+ // map(1) filter(1) map(2) filter(4) map(3) filter(9) map(4) filter(16)
+ ```
+ 직접 연산을 구현한다면 map 함수를 각 원소에 대해 먼저 수행해서 새 시퀸스를 얻고, 그 시퀸스에 대해 다시 filter를 수행할 것이다. 컬렉션에 대한 map과 filter는 그런 방식으로 작동한다. 하지만 시퀸스에 대한 map과 filter는 그렇지 않다. 시퀸스의 경우 모든 연산은 각 원소에 대해 순차적으로 적용된다. 즉 첫 번째 원소가 (변환된 다음에 걸러지면서) 처리되고, 다시 두 번째 원소가 처리되며, 이런 처리가 모든 원소에 대해 적용된다.
+
+ 따라서 원소에 연산을 차례대로 적용하다가 결과가 얻어지면 그 이후의 원소에 대해서는 변환이 이뤄지지 않을 수도 있다.
+ ```kotlin
+ >>> println(listOf(1, 2, 3, 4).asSequence()
+                               .map { it * it }.find { it > 3 })
+ // 4
+ ```
+
+ 컬렉션에 대해 수행하는 연산의 순서도 성능에 영향을 끼친다. 어떤 순서로 하느냐에 따라 결과는 같아도 수행해야 하는 변환의 전체 횟수는 다르다.
+ ```kotlin
+ >>> val people = listOf(Person("Alice", 29), Person("Bob", 31),
+                Person("Charles", 31), Person("Dan", 21))
+
+ >>> println(people.asSequence().map(Person::name)
+            .filter { it.length < 4 }.toList()) // [Bob, Dan]
+
+ >>> println(people.asSequence().filter { it.name.length < 4 }
+            .map(Person::name).toList()) // [Bob, Dan]
+ ```
+ ![](../assets/kotlin-sequence-flow.png)
+
+ ### 시퀸스 만들기
+ 시퀸스를 만드는 다른 방법으로 generateSequence 함수를 사용할 수 있다. 이 함수는 **이전의 원소를 인자로 받아 다음 원소를 계산**한다.
+ ```kotlin
+ >>> val naturalNumbers = generateSequence(0) { it + 1 }
+ >>> val numbersTo100 = naturalNumbers.takeWhile { it <= 100 }
+ >>> println(numbersTo100.sum()) // 모든 지연 연산은 "sum"의 결과를 계산할 때 수행된다(여기서는 sum이 최종 연산이다).
+ 5050
+ ```
+ naturalNumbers와 numbersTo100은 모두 시퀸스며, 연산을 지연 계산한다.
+
+ 시퀸스를 사용하는 일반적인 용례 중 하나는 객체의 조상으로 이뤄진 시퀸스를 만들어내는 것이다. 어떤 객체의 조상이 자신과 같은 타입이고(사람이나 자바 파일이 그렇다) 모든 조상의 시퀸스에서 어떤 특성을 알고 싶을 때가 있다. 다음 예제는 어떤 파일의 상위 디렉터리를 뒤지면서 숨김 속성을 가진 디렉터리가 있는지 검사함으로써 파일이 감춰진 디렉터리 안에 들어있는지 알아본다.
+ ```kotlin
+ fun File.isInsideHiddenDirectory() =
+      generateSequence(this) { it.parentFile }.any { it.isHidden }
+ >>> val file = File("/Users/svtk/.HiddenDir/a.txt")
+ >>> println(file.isInsideHiddenDirectory()) // true
+ ```
+ 첫 번째 원소를 지정하고, 시퀸스의 한 원소로부터 다음 원소를 계산하는 방법을 제공함으로써 시퀸스를 만든다.
