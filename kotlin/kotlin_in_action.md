@@ -90,6 +90,11 @@
       3. [지연 계산(lazy) 컬렉션 연산](#3-지연-계산lazy-컬렉션-연산)
           1. [시퀸스 연산 실행: 중간 연산과 최종 연산](#시퀸스-연산-실행-중간-연산과-최종-연산)
           2. [시퀸스 만들기](#시퀸스-만들기)
+      4. [자바 함수형 인터페이스 활용](#4-자바-함수형-인터페이스-활용)
+          1. [자바 메서드에 람다를 인자로 전달](#자바-메서드에-람다를-인자로-전달)
+          2. [SAM 생성자: 람다를 함수형 인터페이스로 명시적으로 변경](#sam-생성자-람다를-함수형-인터페이스로-명시적으로-변경)
+      5. [수신 객체 지정 람다: with와 apply](#5-수신-객체-지정-람다-with와-apply)
+          1. [with 함수](#with-함수)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -1896,3 +1901,124 @@ if(value is String) // 타입을 검사한다.
  >>> println(file.isInsideHiddenDirectory()) // true
  ```
  첫 번째 원소를 지정하고, 시퀸스의 한 원소로부터 다음 원소를 계산하는 방법을 제공함으로써 시퀸스를 만든다.
+
+ ## 4. 자바 함수형 인터페이스 활용
+ 실제로 다뤄야 하는 API 중 상당수는 코틀린이 아니라 자바로 작성된 API일 가능성이 높다. 다행이도 코틀린 람다를 자바 API에 사용해도 아무 문제가 없다.
+
+ 자바 8 이전의 자바
+ ```java
+ button.setOnClickListener(new OnClickListener() {
+  @override
+  public void onClick(View v) {
+    ...
+  }
+ })
+ ```
+
+ 코틀린에서는 무명 클래스 인스턴스 대신 람다를 넘길 수 있다.
+ ```kotlin
+ button.setOnClickListener { view -> ... }
+ ```
+ onClickListener를 구현하기 위해 사용한 람다에는 view라는 파라미터가 있다. view의 타입은 View다. 이는 onClick 메서드의 인자 타입과 같다.**(람다의 파라미터는 메서드의 파라미터와 대응한다.)**
+
+ 이런 코드가 작동하는 이유는 OnClickListener에 추상 메서드가 단 하나만 있기 때문이다. 그런 인터페이스를 **함수형 인터페이스** 또는 **SAM 인터페이스**라고 한다. SAM은 **단일 추상 메서드**라는 뜻이다. 자바 API에는 Runnable이나 Callable과 같은 함수형 인터페이스와 그런 함수형 인터페이스를 활용하는 메서드가 많다. 코틀린은 함수형 인터페이스를 인자로 취하는 자바 메서드를 호출할 때 람다를 넘길 수 있게 해준다.
+
+ ### 자바 메서드에 람다를 인자로 전달
+ 함수형 인터페이스를 인자로 원하는 자바 메서드에 코틀린 람다를 전달할 수 있다.
+ ```java
+ /* 자바 */
+ void postponeComputation(int delay, Runnable computation);
+ ```
+
+ 컴파일러는 자동으로 람다를 Runnable 인스턴스로 변환해준다.
+ ```
+ postponeComputation(1000) { println(42) }
+ ```
+ 'Runnable 인스턴스'라는 말은 실제로는 'Runnable을 구현한 무명 클래스의 인스턴스'라는 뜻이다. 컴파일러는 자동으로 그런 무명 클래스와 인스턴스를 만들어준다. **이때 그 무명 클래스에 있는 유일한 추상 메서드를 구현할 때 람다 본문을 메서드 본문으로 사용한다.**
+
+ Runnable을 구현하는 무명 객체를 명시적으로 만들어서 사용할 수도 있다.
+ ```kotlin
+ postponeComputation(1000, object : Runnable {
+  override fun run() {
+    println(42)
+  }
+ })
+ ```
+ 하지만 람다와 무명 객체 사이에는 차이가 있다.
+ * 객체를 명시적으로 선언하는 경우 : 메서드를 호출할 때마다 새로운 객체가 생성된다.
+ * 람다를 사용하는 경우 : 정의가 들어있는 함수의 변수에 접근하지 않는 람다에 대응하는 무명 객체를 메서드를 호출할 때 마다 반복 사용한다.
+
+ 람다가 주변 영역의 변수를 포획한다면 매 호출마다 같은 인스턴스를 사용할 수 없다. 그런 경우 컴파일러는 매번 주변 영역의 변수를 포획한 새로운 인스턴스를 생성해준다.
+ ```kotlin
+ fun handleComputation(id: String) { // 람다 안에서 "id" 변수를 포획한다.
+  postponeComputation(1000) { println(id) } // handleComputation을 호출할 때마다 새로 Runnable 인스턴스를 만든다.
+ }
+ ```
+
+ 람다에 대해 무명클래스를 만들고 그 클래스의 인스턴스를 만들어서 메서드에 넘긴다는 설명은 함수형 인터페이스를 받는 자바 메서드를 코틀린에서 호출할 때 쓰는 방식을 설명해주지만, **컬렉션을 확장한 메서드에 람다를 넘기는 경우** 코틀린은 그런 방식을 사용하지 않는다. **코틀린 inline으로 표시된 코틀린 함수에게 람다를 넘기면 아무런 무명 클래스도 만들어지지 않는다.** 대부분의 코틀린 확장 함수들은 inline 표시가 붙어있다.
+
+ ### SAM 생성자: 람다를 함수형 인터페이스로 명시적으로 변경
+ **SAM 생성자는 람다를 함수형 인터페이스의 인스턴스로 변환할 수 있게 컴파일러가 자동으로 생성한 함수다.** 컴파일러가 자동으로 람다를 함수형 인터페이스 무명 클래스로 바꾸지 못하는 경우 SAM 생성자를 사용할 수 있다. 
+ 
+ 예를 들어 함수형 인터페이스의 인스턴스를 반환하는 메서드가 있다면 람다를 직접 반환할 수 없고, 반환하고픈 람다를 SAM 생성자로 감싸야 한다.
+ ```kotlin
+ fun createAllDoneRunnable() : Runnable { // 인스턴스를 반환하는 메서드
+  return Runnable { println("All done!") } // 람다를 SAM 생성자로 감싼다.
+ }
+ >>> createAllDoneRunnable().run() // All done!
+ ```
+ **SAM 생성자의 이름은 사용하려는 함수형 인터페이스의 이름과 같다.** SAM 생성자는 그 함수형 인터페이스의 유일한 추상 메서드의 본문에 사용할 람다만을 인자로 받아서 함수형 인터페이스를 구현하는 클래스의 인스턴스를 반환한다.
+
+ **람다로 생성한 함수형 인터페이스 인스턴스를 변수에 저장해야 하는 경우에도 SAM 생성자를 사용할 수 있다.**
+ ```kotlin
+ val listener = OnClickListener { view -> 
+  val text = when (view.id) { // view.id를 사용해 어떤 버튼이 클릭됐는지 판단한다.
+    R.id.button1 -> "First button"
+    R.id.button2 -> "Second button"
+    else -> "Unknown button"
+  }
+  toast(text) // "text"의 값을 사용자에게 보여준다.
+ }
+ button1.setOnClickListener(listener)
+ button2.setOnClickListener(listener)
+ ```
+
+ #### 람다와 리스너 등록/해제하기
+ 람다에는 무명 객체와 달리 인스턴스 자신을 가리키는 this가 없다. 따라서 람다를 변환한 무명 클래스의 인스턴스를 참조할 방법이 없다. 컴파일러 입장에서 보면 람다는 코드 블록일 뿐이고, 객체가 아니므로 객체처럼 람다를 참조할 수는 없다. 람다 안에서 this는 그 람다를 둘러싼 클래스의 인스턴스를 가리킨다. 그런 경우에는 람다 대신 무명 객체를 사용하면 인스턴스 자신을 가리키는 this를 사용할 수 있다.
+
+ 또한 함수형 인터페이스를 요구하는 메서드를 호출할 때 대부분의 SAM 변환을 컴파일러가 자동으로 수행할 수 있지만, 가끔 오버로드한 메서드 중에서 어떤 타입의 메서드를 선택해 람다를 변환해 넘겨줘야 할지 모호한 때가 있다. 그런 경우 명시적으로 SAM 생성자를 적용하면 컴파일 오류를 피할 수 있다.
+
+ ## 5. 수신 객체 지정 람다: with와 apply
+ 자바의 람다에는 없는 코틀린 람다의 독특한 기능이 있다. 그 기능은 바로 수신 객체를 명시하지 않고 람다의 본문 안에서 다른 객체의 메서드를 호출할 수 있게 하는 것이다. 그런 람다를 **수신 객체 지정 람다**라고 부른다.
+
+ ### with 함수
+ 어떤 객체의 이름을 반복하지 않고도 그 객체에 대해 다양한 연산을 수행할 수 있다. 코틀린은 언어 구성 요소로 제공하지는 않지만 with라는 라이브러리 함수를 통해 제공한다.
+
+ 다음 예제는 result에 대해 다른 여러 메서드를 호출하면서 매번 result를 반복 사용했다.
+ ```kotlin
+ fun alphabet(): String {
+  val result = StringBuilder()
+  for (letter in 'A'..'Z') {
+    result.append(letter)
+  }
+  result.append("\nNow I Know the alphabet!")
+  return result.toString()
+ }
+ >>> println(alphabet())
+ ABCDEFGHIJKLMNOPQRSTUVWXYZ
+ Now I know the alphabet!
+ ```
+
+ 앞의 예제를 with로 작성할 수 있다.
+ ```kotlin
+ fun alphabet(): String {
+  val stringBuilder = StringBuilder()
+  return with(stringBuilder) { // 메서드를 호출하려는 수신 객체를 지정한다.
+    for (letter in 'A'..'Z') {
+      this.append(letter) // "this"를 명시해서 앞에서 지정한 수신 객체의 메서드를 호출한다.
+    }
+    append("\nNow I know the alphabet!") // "this"를 생략하고 메서드를 호출한다.
+    this.toString() // 람다에서 값을 반환한다.
+  }
+ }
+ ```
