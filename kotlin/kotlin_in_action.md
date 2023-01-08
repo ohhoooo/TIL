@@ -95,6 +95,7 @@
           2. [SAM 생성자: 람다를 함수형 인터페이스로 명시적으로 변경](#sam-생성자-람다를-함수형-인터페이스로-명시적으로-변경)
       5. [수신 객체 지정 람다: with와 apply](#5-수신-객체-지정-람다-with와-apply)
           1. [with 함수](#with-함수)
+          2. [apply 함수](#apply-함수)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -2020,5 +2021,53 @@ if(value is String) // 타입을 검사한다.
     append("\nNow I know the alphabet!") // "this"를 생략하고 메서드를 호출한다.
     this.toString() // 람다에서 값을 반환한다.
   }
+ }
+ ```
+ with문은 2개의 파라미터가 있는 함수다. 여기서 첫 번째 파라미터는 stringBuilder이고, 두 번째 파라미터는 람다다.
+ * **첫 번째 인자로 받은 객체를 두 번째 인자로 받은 람다의 수신 객체로 만든다.**
+ * 인자로 받은 람다 본문에서는 this를 사용해 그 수신 객체에 접근할 수 있다.
+ * 일반적인 this와 마찬가지로 this와 점(.)을 사용하지 않고 프로퍼티나 메서드 이름만 사용해도 수신 객체의 멤버에 접근할 수 있다.
+ * with가 반환하는 값은 람다 코드를 실행한 결과며, 그 결과는 람다 식의 본문에 있는 마지막 식의 값이다.
+
+ 앞의 alphabet 함수를 더 개선해서 불필요한 stringBuilder 변수를 없앨 수도 있다. with은 식을 본문으로 하는 함수로 표현할 수 있다.
+ ```kotlin
+ fun alphabet() = with(StringBuilder()) {
+  for(letter in 'A'..'Z') {
+    append(letter)
+  }
+  append("\nNow I know the alphabet!")
+  toString()
+ }
+ ```
+
+ #### 메서드 이름 충돌
+ with에게 인자로 넘긴 객체의 클래스와 with를 사용하는 코드가 들어있는 클래스 안에 이름이 같은 메서드가 있으면 this 참조 앞에 레이블을 붙이면 호출하고 싶은 메서드를 명확하게 정할 수 있다.
+
+ alphabet 함수가 OuterClass의 메서드라고 할 때 StringBuilder가 아닌 바깥쪽 클래스(OuterClass)에 정의된 toString을 호출하고 싶다면 다음과 같은 구문을 사용하면 된다.
+ ```kotlin
+ this@OuterClass.toString()
+ ```
+
+ ### apply 함수
+ apply 함수는 거의 with와 같다. **유일한 차이란 apply는 항상 자신에게 전달된 객체(즉 수신 객체)를 반환한다**는 점뿐이다.
+ ```kotlin
+ fun alphabet() = StringBuilder().apply {
+  for(letter in 'A'..'Z') {
+    append(letter)
+  }
+  append("\nNow I know the alphabet!")
+ }.toString()
+ ```
+ apply는 확장 함수로 정의돼 있다. apply의 수신 객체가 전달받은 람다의 수신 객체가 된다. 이 함수에서 apply를 실행한 결과는 StringBuilder 객체다. 따라서 그 객체의 toString을 호출해서 String 객체를 얻을 수 있다.
+
+ 이런 apply 함수는 **객체의 인스턴스를 만들면서 즉시 프로퍼티 중 일부를 초기화해야 하는 경우 유용하다.** 자바에서는 보통 별도의 Builder 객체가 이런 역할을 담당한다. 코틀린에서는 어떤 클래스가 정의돼 있는 라이브러리의 특별한 지원 없이도 그 클래스 인스턴스에 대해 apply를 활용할 수 있다.
+
+ with와 apply는 수신 객체 지정 람다를 사용하는 일반적인 예제 중 하나다. 더 구체적인 함수를 비슷한 패턴으로 활용할 수 있다. 예를 들어 표준 라이브러리의 buildString 함수를 사용하면 alphabet 함수를 더 단순화할 수 있다. buildString은 앞에서 살펴본 alphabet 코드에서 StringBuilder 객체를 만드는 일과 toString을 호출해주는 일을 알아서 해준다. buildString의 인자는 수신 객체 지정 람다며, 수신 객체는 항상 StringBuilder가 된다.
+ ```kotlin
+ fun alphabet() = buildString {
+  for(letter in 'A'..'Z') {
+    append(letter)
+  }
+  append("\nNow I know the alphabet!")
  }
  ```
