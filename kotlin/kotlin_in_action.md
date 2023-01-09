@@ -96,6 +96,15 @@
       5. [수신 객체 지정 람다: with와 apply](#5-수신-객체-지정-람다-with와-apply)
           1. [with 함수](#with-함수)
           2. [apply 함수](#apply-함수)
+  6. [코틀린 타입 시스템](#06장-코틀린-타입-시스템)
+      1. [널 가능성](#1-널-가능성)
+          1. [널이 될 수 있는 타입](#널이-될-수-있는-타입)
+          2. [타입의 의미](#타입의-의미)
+          3. [안전한 호출 연산자: ?.](#안전한-호출-연산자)
+          4. [엘비스 연산자: ?:](#엘비스-연산자)
+          5. [안전한 캐스트: as?](#안전한-캐스트-as)
+          6. [널 아님 단언: !!](#널-아님-단언)
+          7. [let 함수](#let-함수)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -2071,3 +2080,192 @@ if(value is String) // 타입을 검사한다.
   append("\nNow I know the alphabet!")
  }
  ```
+
+# 06장 코틀린 타입 시스템
+ 
+ ## 1. 널 가능성
+ 널 가능성은 **NullPointerException 오류(NPE)를 피할 수 있게 돕기 위한 코틀린 타입 시스템의 특성**이다. 코틀린을 비롯한 최신 언어에서 null에 대한 접근 방법은 가능한 이 문제를 실행 시점에서 컴파일 시점으로 옮기는 것이다. **널이 될 수 있는지 여부를 타입 시스템에 추가함으로써 컴파일러가 여러 가지 오류를 컴파일 시 미리 감지해서 실행 시점에 발생할 수 있는 예외의 가능성을 줄일 수 있다.**
+
+ ### 널이 될 수 있는 타입
+ 코틀린과 자바의 첫 번째이자 가장 중요한 차이는 **코틀린 타입 시스템이 널이 될 수 있는 타입을 명시적으로 지원한다**는 점이다.
+
+ 이 함수에 null을 넘기면 NullPointerException이 발생한다.
+ ```java
+ /* 자바 */
+ int strLen(String s) {
+  return s.length();
+ }
+ ```
+
+ 널이 인자로 들어올 수 없다면 코틀린에서는 다음과 같이 함수를 작성할 수 있다. strLen에 null이거나 널이 될 수 있는 인자를 넘기는 것은 금지되며, 혹시 그런 값을 넘기면 컴파일 시 오류가 발생한다.
+ ```kotlin
+ fun strLen(s: String) = s.length
+ ```
+ strLen 함수에서 파라미터 s의 타입은 String인데 코틀린에서 이는 s가 항상 String의 인스턴스여야 한다는 뜻이다. 이때 컴파일러는 널이 될 수 있는 값을 strLen에게 인자로 넘기지 못하게 막는다. 따라서 strLen 함수가 결코 실행 시점에 NullPointerException을 발생시키지 않으리라 장담할 수 있다.
+
+ **이 함수가 널과 문자열을 인자로 받을 수 있게 하려면 타입 이름 뒤에 물음표(?)를 명시해야 한다.**
+ ```kotlin
+ fun strLenSafe(s: String?) = ...
+ ```
+ String?, Int?, MyCustomType? 등 어떤 타입이든 타입 이름 뒤에 물음표를 붙이면 그 타입의 변수나 프로퍼티에 null 참조를 저장할 수 있다는 뜻이다.
+
+ 널이 될 수 있는 타입의 변수가 있다면 그에 대해 수행할 수 있는 연산이 제한된다. 예를 들어 널이 될 수 있는 타입인 변수에 대해 **변수.메서드()**처럼 메서드를 직접 호출할 수는 없다.
+ ```kotlin
+ >>> fun strLenSafe(s: String?) = s.length()
+ ERROR: only safe (?.) or non-null asserted (!!.) calls are allowed on a nullable receiver of type kotlin.String?
+ ```
+
+ 널이 될 수 있는 값을 널이 될 수 없는 타입의 변수에 대입할 수 없다.
+ ```kotlin
+ >>> val x: String? = null
+ >>> var y: String = x
+ ERROR: Type mismatch: inferred type is String? but String was expected
+ ```
+
+ 널이 될 수 있는 타입의 값을 널이 될 수 없는 타입의 파라미터를 받는 함수에 전달할 수 없다.
+ ```kotlin
+ >>> strLen(x)
+ ERROR: Type mismatch: inferred type is String? but String was expected
+ ```
+
+ 가장 중요한 일은 널이 될 수 있는 타입의 값으로 null과 비교하는 것이다. 일단 null과 비교하고 나면 컴파일러는 그 사실을 기억하고 null이 아님이 확실한 영역에서는 해당 값을 널이 될 수 없는 타입의 값처럼 사용할 수 있다.
+ ```kotlin
+ fun strLenSafe(s: String?): Int =
+  if(s != null) s.length else 0 // null 검사를 추가하면 코드가 컴파일된다.
+ >>> val x: String? = null
+ >>> println(strLenSafe(x)) // 0
+ >>> println(strLenSafe("abc")) // 3
+ ```
+
+ ### 타입의 의미
+ 타입은 분류로 ... 타입은 어떤 값들이 가능한지와 그 타입에 대해 수행할 수 있는 연산의 종류를 결정한다. 
+ 
+ 자바의 String 타입의 변수에는 String이나 null이라는 두 가지 종류의 값이 들어갈 수 있다. 이 값들은 서로 완전히 다르고 실행할 수 있는 연산도 완전히 다르다. 이는 자바의 타입 시스템이 널을 제대로 다루지 못한다는 뜻이다. 변수에 선언된 타입이 있지만 널 여부를 추가로 검사하기 전에는 그 변수에 대해 어떤 연산을 수행할 수 있을지 알 수 없다.
+
+ 코틀린의 널이 될 수 있는 타입은 이런 문제에 대해 종합적인 해법을 제공한다. 널이 될 수 있는 타입과 널이 될 수 없는 타입을 구분하면 각 타입의 값에 대해 어떤 연산이 가능할지 명확히 이해할 수 있고, 실행 시점에 예외를 발생시킬 수 있는 연산을 판단할 수 있다. 따라서 그런 연산을 아예 금지시킬 수 있다.
+
+ ### 안전한 호출 연산자: ?.
+ 코틀린이 제공하는 가장 유용한 도구 중 하나가 안전한 호출 연산자인 `?.`이다. `?.`은 null 검사와 메서드 호출을 한 번의 연산으로 수행한다. 호출하려는 값이 null이 아니라면 ?.은 일반 메서드 호출처럼 작동한다. 호출하려는 값이 null이면 이 호출은 무시되고 null이 결과 값이 된다.
+
+ 안전한 호출의 결과 타입도 널이 될 수 있는 타입이다.
+ ```kotlin
+ fun printAllCaps(s: String?) {
+  val allCaps: String? = s?.toUpperCase() // allCaps는 널일 수도 있다.
+  println(allCaps)
+ }
+ >>> printAllCaps("abc") // ABC
+ >>> printAllCaps(null) // null
+ ```
+
+ 메서드 호출뿐 아니라 프로퍼티를 읽거나 쓸 때도 안전한 호출을 사용할 수 있다.
+ ```kotlin
+ class Employee(val name: String, val manager: Employee?)
+
+ fun managerName(employee: Employee): String? = employee.manager?.name
+ >>> val ceo = Employee("Da Boss", null)
+ >>> val developer = Employee("Bob Smith", ceo)
+ >>> println(managerName(developer)) // Da Boss
+ >>> println(managerName(ceo)) // null
+ ```
+
+ 객체 그래프에서 널이 될 수 있는 중간 객체가 여럿 있다면 한 식 안에서 안전한 호출을 연쇄해서 함께 사용하면 편할 때가 자주 있다.
+ ```kotlin
+ class Address(val streetAddress: String, val zipCode: Int,
+              val city: String, val country: String)
+ class Company(val name: String, val address: Address?)
+ class Person(val name: String, val company: Company?)
+
+ fun Person.countryName(): String {
+  val country = this.company?.address?.country // 여러 안전한 호출 연산자를 연쇄해 사용한다.
+  return if (country != null) country else "Unknown"
+ }
+ >>> val person = Person("Dmitry", null)
+ >>> println(person.countryName()) // Unknown
+ ```
+
+ ### 엘비스 연산자: ?:
+ 코틀린은 null 대신 사용할 디폴트 값을 지정할 때 편리하게 사용할 수 있는 연산자를 제공한다. 그 연산자는 **엘비스 연산자**라고 한다.
+ ```kotlin
+ fun foo(s: String?) {
+  val t: String = s ?: "" // "s"가 null이면 결과는 빈 문자열("")이다.
+ }
+ ```
+ 이 연산자는 이항 연산자로 좌항을 계산한 값이 널인지 검사한다. 좌항 값이 널이 아니면 좌항 값을 결과로 하고, 좌항 값이 널이면 우항 값을 결과로 한다.
+
+ 엘비스 연산자를 객체가 널인 경우 널을 반환하는 안전한 호출 연산자와 함께 사용해서 객체가 널인 경우에 대비한 값을 지정하는 경우도 있다.
+ ```kotlin
+ fun strLenSafe(s: String?): Int = s?.length ?: 0
+ >>> println(strLenSafe("abc")) // 3
+ >>> println(strLenSafe(null)) // 0
+ ```
+ ```kotlin
+ fun Person.countryName() = company?.address?.country ?: "Unknown"
+ ```
+
+ 코틀린에서는 return이나 throw 등의 연산도 식이다. 따라서 엘비스 연산자의 우항에 return, throw 등의 연산을 넣을 수 있고, 엘비스 연산자를 더욱 편하게 사용할 수 있다. 그런 경우 엘비스 연산자의 좌항이 널이면 함수가 즉시 어떤 값을 반환하거나 예외를 던진다.
+ ```kotlin
+ class Address(val streetAddress: String, val zipCode: Int,
+              val city: String, val country: String)
+ class Company(val name: String, val address: Address?)
+ class Person(val name: String, val company: Company?)
+
+ fun printShippingLabel(person: Person) {
+  val address = person.company?.address
+    ?: throw IllegalArgumentException("No address") // 주소가 없으면 예외를 발생시킨다.
+    with(address) {
+      println(streetAddress)
+      println("$zipCode $city, $country")
+    }
+ }
+ ```
+
+ ### 안전한 캐스트: as?
+ 코틀린 타입 캐스트 연산자인 as는 자바 타입 캐스트와 마찬가지로 대상 값을 as로 지정한 타입으로 바꿀 수 없으면 ClassCastException이 발생한다.
+
+ as? 연산자는 어떤 값을 지정한 타입으로 캐스트한다. as?는 값을 대상 타입으로 변환할 수 없으면 null을 반환한다.
+
+ 안전한 캐스트를 사용할 때 일반적인 패턴은 캐스트를 수행한 뒤에 엘비스 연산자를 사용하는 것이다.
+ ```kotlin
+ class Person(val firstName: String, val lastName: String) {
+  override fun equals(o: Any?): Boolean {
+    val otherPerson = o as? Person ?: return false
+
+    return otherPerson.firstName == firstName && otherPerson.lastName == lastName
+  }
+
+  override fun hashCode(): Int = firstName.hashCode() * 37 + lastName.hashCode()
+ }
+ >>> val p1 = Person("Dmitry", "Jemerov")
+ >>> val p2 = Person("Dmitry", "Jemerov")
+ >>> println(p1 == p2) // == 연산자는 "equals" 메서드를 호출한다.(true)
+ >>> println(p1.equals(42)) // false
+ ```
+
+ ### 널 아님 단언: !!
+ 널 아님 단언은 코틀린에서 널이 될 수 있는 타입의 값을 다룰 때 사용할 수 있는 도구 중에서 가장 단순하면서도 무딘 도구다. 느낌표를 이중(!!)으로 사용하면 **어떤 값이든 널이 될 수 없는 타입으로(강제로) 바꿀 수 있다.** 실제 널에 대해 !!를 적용하면 NPE가 발생한다.
+ ```kotlin
+ fun ignoreNulls(s: String?) {
+  val sNotNull: String = s!! // 예외는 이 지점을 가리킨다.
+  println(sNotNull.length)
+ }
+ >>> ignoreNulls(null)
+ Exception in thread "main" kotlin.KotlinNullPointerException
+ at <...>.ignoreNulls(07_NotnullAssertions.kt:2)
+ ```
+ 발생한 예외는 null값을 사용하는 코드가 아니라 단언문이 위치한 곳을 가리킨다. 근본적으로 !!는 컴파일러에게 "나는 이 값이 null이 아님을 잘 알고 있다. 내가 잘못 생각했다면 예외가 발생해도 감수하겠다." 라고 말하는 것이다.
+
+ 하지만 널 아님 단언문이 더 나은 해법인 경우도 있다. 어떤 함수가 값이 널인지 검사한 다음에 다른 함수를 호출한다고 해도 컴파일러는 호출된 함수 안에서 안전하게 그 값을 사용할 수 있음을 인식할 수 없다. 하지만 이런 경우 **호출된 함수가 언제나 다른 함수에서 널이 아닌 값을 전달받는다는 사실이 분명하다면 굳이 널 검사를 다시 수행하고 싶지는 않을 것이다. 이럴 때 널 아님 단언문을 쓸 수 있다.**
+
+ ### let 함수
+ let 함수를 사용하면 널이 될 수 있는 식을 더 쉽게 다룰 수 있다. let 함수를 안전한 호출 연산자와 함께 사용하면 원하는 식을 평가해서 결과가 널인지 검사한 다음에 그 결과를 변수에 넣는 작업을 간단한 식을 사용해 한꺼번에 처리할 수 있다.
+
+ let을 사용하는 가장 흔한 용례는 널이 될 수 있는 값을 널이 아닌 값만 인자로 받는 함수에 넘기는 경우다.
+ ```kotlin
+ fun sendEmailTo(email: String) { ... } // 널이 될 수 있는 타입의 값을 넘길 수 없다.
+ >>> val email: String? = ...
+
+ >>> sendEmailTo(email) // ERROR: Type mismatch: inferred type is String? but String was expected
+ >>> if(email != null) sendEmailTo(email) // 인자를 넘기기 전에 주어진 값이 널인지 검사해야 한다.
+ ```
+
+ 하지만 let 함수를 통해 인자를 전달할 수도 있다. let 함수는 자신의 수신 객체를 인자로 전달받은 람다에게 넘긴다. **널이 될 수 있는 값에 대해 안전한 호출 구문을 사용해 let을 호출하되 널이 될 수 없는 타입을 인자로 받는 람다를 let에 전달한다.** 이렇게 하면 널이 될 수 있는 타입의 값을 널이 될 수 없는 타입의 값으로 바꿔서 람다에 전달하게 된다.
