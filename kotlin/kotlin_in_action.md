@@ -124,8 +124,17 @@
           5. [객체의 배열과 원시 타입의 배열](#객체의-배열과-원시-타입의-배열)
   7. [연산자 오버로딩과 기타 관례](#07장-연산자-오버로딩과-기타-관례)
       1. [산술 연산자 오버로딩](#1-산술-연산자-오버로딩)
-      2. [복합 대입 연산자 오버로딩](#복합-대입-연산자-오버로딩)
-      3. [단항 연산자 오버로딩](#단항-연산자-오버로딩)
+          1. [이항 산술 연산 오버로딩](#이항-산술-연산-오버로딩)
+          2. [복합 대입 연산자 오버로딩](#복합-대입-연산자-오버로딩)
+          3. [단항 연산자 오버로딩](#단항-연산자-오버로딩)
+      2. [비교 연산자 오버로딩](#2-비교-연산자-오버로딩)
+          1. [동등성 연산자: equals](#동등성-연산자-equals)
+          2. [순서 연산자: compareTo](#순서-연산자-compareto)
+      3. [컬렉션과 범위에 대해 쓸 수 있는 관례](#3-컬렉션과-범위에-대해-쓸-수-있는-관례)
+          1. [인덱스로 원소에 접근: get과 set](#인덱스로-원소에-접근-get과-set)
+          2. [in 관례](#in-관례)
+          3. [rangeTo 관례](#rangeto-관례)
+          4. [for 루프를 위한 iterator 관례](#for-루프를-위한-iterator-관례)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -2837,4 +2846,168 @@ if(value is String) // 타입을 검사한다.
  >>> var bd = BigDecimal.ZERO
  >>> println(bd++) // 0, 후위 증가 연산자는 println이 실행된 다음에 값을 증가시킨다.
  >>> println(++bd) // 2, 전위 증가 연산자는 println이 실행되기 전에 값을 증가시킨다.
+ ```
+
+ ## 2. 비교 연산자 오버로딩
+ 코틀린에서는 산술 연산자와 마찬가지로 원시 타입 값뿐 아니라 **모든 객체에 대해 비교 연산을 수행할 수 있다.** equals나 compareTo를 호출해야 하는 자바와 달리 코틀린에서는 == 비교 연산자를 직접 사용할 수 있어서 비교 코드가 equals나 compareTo를 사용한 코드보다 더 간결하며 이해하기 쉽다.
+
+ ### 동등성 연산자: equals
+ 코틀린은 == 연산자 호출을 equals 메서드 호출로 컴파일한다(관례). != 연산자를 사용하는 식도 equals 호출로 컴파일된다. ==와 !=는 내부에서 인자가 널인지 검사하므로 다른 연산과 달리 널이 될 수 있는 값에도 적용할 수 있다. a == b라는 비교를 처리할 때 코틀린은 a가 널인지 판단해서 널이 아닌 경우에만 a.equals(b)를 호출한다. a가 널이라면 b도 널인 경우에만 결과가 true다.
+
+ ![](../assets/kotlin-equals-flow.png)
+
+ Point 클래스의 경우 data라는 표시가 붙어있으므로 컴파일러가 자동으로 equals를 생성해준다. 하지만 직접 equals를 구현한다면 다음과 비슷한 코드가 된다.
+ ```kotlin
+ class Point(val x: Int, val y: Int) {
+  override fun equals(obj: Any?): Boolean { // Any에 정의된 메서드를 오버라이딩한다.
+    if(obj === this) return true // 최적화: 파라미터가 "this"와 같은 객체인지 살펴본다.
+    if(obj !is Point) return false // 파라미터 타입을 검사한다.
+    return obj.x == x && obj.y == y // Point로 스마트 캐스트해서 x와 y 프로퍼티에 접근한다.
+  }
+ }
+ >>> println(Point(10, 20) == Point(10, 20)) // true
+ >>> println(Point(10, 20) != Point(5, 5)) // true
+ >>> println(null == Point(1, 2)) // false
+ ```
+ equals 함수에는 override가 붙어있다. 다른 연산자 오버로딩 관례와 달리 equals는 Any에 정의된 메서드이므로 override가 필요하다. Any의 equals에는 operator가 붙어있지만 그 메서드를 오버라이드하는 메서드 앞에는 operator 변경자를 붙이지 않아도 자동으로 상위 클래스의 operator 지정이 적용된다. 또한 Any에서 상속받은 equals가 확장 함수보다 우선순위가 높기 때문에 equals를 확장 함수로 정의할 수는 없다.
+
+ ### 순서 연산자: compareTo
+ 자바에서 정렬이나 최댓값, 최솟값 등 값을 배교해야 하는 알고리즘에 사용할 클래스는 Comparable 인터페이스를 구현해야 한다. Comparable에 들어있는 compareTo 메서드는 한 객체와 다른 객체의 크기를 비교해 정수로 나타내준다. 하지만 자바에는 이 메서드를 짧게 호출할 수 있는 방법이 없다. <나 > 등의 연산자로는 원시 타입의 값만 비교할 수 있다. 다른 모든 타입의 값에는 element1.compareTo(element2)를 명시적으로 사용해야 한다.
+
+ 코틀린도 똑같은 Comparable 인터페이스를 지원한다. 게다가 코틀린은 Comparable 인터페이스 안에 있는 compareTo 메서드를 호출하는 관례를 제공한다. 따라서 **비교 연산자(<, >, <=, >=)는 compareTo 호출로 컴파일된다.** compareTo가 반환하는 값은 Int다. p1 < p2는 p1.compareTo(p2) < 0과 같다. 다른 비교 연산자도 똑같은 방식으로 작동한다.
+ ```kotlin
+ class Person(val firstName: String, val lastName: String) : Comparable<Person> {
+  override fun compareTo(other: Person): Int {
+    return compareValuesBy(this, other, // 인자로 받은 함수를 차례로 호출하면서 값을 비교한다.
+      Person::lastName, Person::firstName)
+  }
+ }
+ >>> val p1 = Person("Alice", "Smith")
+ >>> val p2 = Person("Bob", "Johnson")
+ >>> println(p1 < p2) // false
+ ```
+ 여기서 정의한 Person 객체의 Comparable 인터페이스를 코틀린뿐 아니라 자바 쪽의 컬렉션 정렬 메서드 등에도 사용할 수 있다.
+
+ ## 3. 컬렉션과 범위에 대해 쓸 수 있는 관례
+ 컬렉션을 다룰 때 가장 많이 쓰는 연산은 인덱스를 사용해 원소를 읽거나 쓰는 연산과 어떤 값이 컬렉션에 속해있는지 검사하는 연산이다. 사용자 지정 클래스에 이런 연산을 추가할 수 있다.(관례)
+
+ ### 인덱스로 원소에 접근: get과 set
+ 코틀린에서 맵의 원소에 접근할 때나 자바에서 배열 원소에 접근할 때 모두 각괄호([])를 사용한다.
+ ```kotlin
+ val value = map[key]
+ ```
+ 
+ 같은 연산자를 사용해 변경 가능 맵에 키/값 쌍을 넣거나 이미 맵에 들어있는 키/값 연관 관계를 변경할 수 있다.
+ ```kotlin
+ mutableMap[key] = newValue
+ ```
+
+ 코틀린에서는 **인덱스 연산자도 관례를 따른다.** 인덱스 연산자를 사용해 원소를 읽는 연산은 get 연산자 메서드로 변환되고, 원소를 쓰는 연산은 set 연산자 메서드로 변환된다. Map과 MutableMap 인터페이스에는 그 두 메서드가 이미 들어있다.
+ ```kotlin
+ operator fun Point.get(index: Int): Int { // "get" 연산자 함수를 정의한다.
+  return when(index) {
+    0 -> x
+    1 -> y
+    else -> throw IndexOutOfBoundsException("Invalid coordinate $index")
+  }
+ }
+ >>> val p = Point(10, 20)
+ >>> println(p[1]) // 20
+ ```
+ get이라는 메서드를 만들고 operator 변경자를 붙이기만 하면 된다.
+
+ ![](../assets/kotlin-get-flow.png)
+
+ get 메서드의 파라미터로 Int가 아닌 타입도 사용할 수 있다(맵 인덱스 연산의 경우 get의 파라미터 타입은 맵의 키 타입과 같은 임의의 타입). 또한 여러 파라미터를 사용하는 get을 정의할 수도 있다.
+
+ 인덱스에 해당하는 컬렉션 원소를 쓰고 싶을 때는 set이라는 이름의 함수를 정의하면 된다.
+ ```kotlin
+ data class MutablePoint(var x: Int, var y: Int)
+
+ operator fun MutablePoint.set(index: Int, value: Int) { // "set"이라는 연산자 함수를 정의한다.
+  when(index) {
+    0 -> x = value
+    1 -> y = value
+    else -> throw IndexOutOfBoundsException("Invalid coordinate $index")
+  }
+ }
+ >>> val p = MutablePoint(10, 20)
+ >>> p[1] = 42
+ >>> println(p) // MutablePoint(x=10, y=42)
+ ```
+
+ ![](../assets/kotlin-set-flow.png)
+
+ ### in 관례
+ 컬렉션이 지원하는 다른 연산자로는 in이 있다. **in은 객체가 컬렉션에 들어있는지 검사한다.** 그런 경우 in 연산자와 대응하는 함수는 `contains`다.
+ ```kotlin
+ data class Rectangle(val upperLeft: Point, val lowerRight: Point)
+ 
+ operator fun Rectangle.contains(p: Point): Boolean {
+  return p.x in upperLeft.x until lowerRight.x &&
+      p.y in upperLeft.y until lowerRight.y
+ }
+ >>> val rect = Rectangle(Point(10, 20), Point(50, 50))
+ >>> println(Point(20, 30) in rect) // true
+ >>> println(Point(5, 5) in rect) // false
+ ```
+
+ ![](../assets/kotlin-in-flow.png)
+
+ **열린 범위**는 끝 값을 포함하지 않는 범위를 말한다. 예를 들어 10..20이라는 식을 사용해 일반적인(닫힌) 범위를 만들면 10 이상 20 이하인 범위가 생긴다. 10 until 20으로 만드는 열린 범위는 10 이상 19 이하인 범위이다.
+
+ ### rangeTo 관례
+ **범위를 만들려면 .. 구문을 사용**해야 한다. ..연산자는 `rangeTo` 함수를 간략하게 표현하는 방법이다.
+
+ ![](../assets/kotlin-rangeTo-flow.png)
+
+ rangeTo 함수는 범위를 반환한다. 이 연산자를 아무 클래스에나 정의할 수 있다. **하지만 어떤 클래스가 Comparable 인터페이스를 구현하면 rangeTo를 정의할 필요가 없다. 코틀린 표준 라이브러리를 통해 비교 가능한 원소로 이뤄진 범위를 쉽게 만들 수 있다. 코틀린 표준 라이브러리에는 모든 Comparable 객체에 대해 적용 가능한 rangeTo 함수가 들어있다.**
+ ```kotlin
+ operator fun <T: Comparable<T>> T.rangeTo(that: T): ClosedRange<T>
+ ```
+ 이 함수는 범위를 반환하며, 어떤 원소가 그 범위 안에 들어있는지 in을 통해 검사할 수 있다.
+ ```kotlin
+ >>> val now = LocalDate.now()
+ >>> val vacation = now..now.plusDays(10) // now(오늘)부터 시작해 10일짜리 범위를 만든다.
+ >>> println(now.plusWeeks(1) in vacation) // 특정 날짜가 날짜 범위 안에 들어가는지 검사한다.
+ true
+ ```
+
+ rangeTo 연산자는 다른 산술 연산자보다 우선순위가 낮다. 하지만 혼동을 피하기 위해 괄호로 인자를 감싸주면 더 좋다.
+ ```kotlin
+ >>> val n = 9
+ >>> println(0..(n+1)) // 0..10
+ ```
+
+ 또한 0..n.forEach {}와 같은 식은 컴파일할 수 없다. 범위 연산자는 우선순위가 낮아서 범위의 메서드를 호출하려면 범위를 괄호로 둘러싸야 한다.
+ ```kotlin
+ >>> (0..n).forEach { print(it) } // 0123456789
+ ```
+
+ ### for 루프를 위한 iterator 관례
+ 코틀린의 for 루프는 범위 검사와 똑같이 in 연산자를 사용한다. 하지만 이 경우 in의 의미는 다르다. **for(x in list) { ... }와 같은 문장은 list.iterator()를 호출해서 이터레이터를 얻은 다음, 자바와 마찬가지로 그 이터레이터에 대해 hasNext와 next 호출을 반복하는 식으로 변환된다.**
+
+ 하지만 코틀린에서는 이 또한 관례이므로 iterator 메서드를 확장 함수로 정의할 수 있다. 이런 성질로 인해 일반 자바 문자열에 대한 for 루프가 가능하다. 코틀린 표준 라이브러리는 String의 상위 클래스인 CharSequence에 대한 iterator 확장 함수를 제공한다.
+ ```kotlin
+ operator fun CharSequence.iterator(): CharIterator // 이 라이브러리 함수는 문자열을 이터레이션할 수 있게 해준다.
+ >>> for (c in "abc") {}
+ ```
+
+ 클래스 안에 직접 iterator 메서드를 구현할 수도 있다.
+ ```kotlin
+ operator fun ClosedRange<LocalDate>.iterator(): Iterator<LocalDate> =
+  object : Iterator<LocalDate> { // 이 객체는 LocalDate 원소에 대한 Iterator를 구현한다.
+    var current = start
+
+    override fun hasNext() =
+      current <= endInclusive // compareTo 관례를 사용해 날짜를 비교한다.
+    override fun next() = current.apply { // 현재 날짜를 저장한 다음에 날짜를 변경한다. 그 후 저장해둔 날짜를 반환한다.
+      current = plusDays(1) // 현재 날짜를 1일 뒤로 변경한다.
+    }
+  }
+ >>> val newYear = LocalDate.ofYearDay(2017, 1)
+ >>> val daysOff = newYear.minusDays(1)..newYear
+ >>> for (dayOff in daysOff) { println(dayOff) } // dayOff에 대응하는 iterator 함수가 있으면 daysOff에 대해 이터레이션한다.
+ 2016-12-31
+ 2017-01-01
  ```
