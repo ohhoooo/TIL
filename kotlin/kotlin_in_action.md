@@ -135,6 +135,11 @@
           2. [in 관례](#in-관례)
           3. [rangeTo 관례](#rangeto-관례)
           4. [for 루프를 위한 iterator 관례](#for-루프를-위한-iterator-관례)
+      4. [구조 분해 선언과 component 함수](#4-구조-분해-선언과-component-함수)
+          1. [구조 분해 선언과 루프](#구조-분해-선언과-루프)
+      5. [프로퍼티 접근자 로직 재활용: 위임 프로퍼티](#5-프로퍼티-접근자-로직-재활용-위임-프로퍼티)
+          1. [위임 프로퍼티 소개](#위임-프로퍼티-소개)
+          2. [위임 프로퍼티 사용: by lazy()를 사용한 프로퍼티 초기화 지연](#위임-프로퍼티-사용-by-lazy를-사용한-프로퍼티-초기화-지연)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -3011,3 +3016,152 @@ if(value is String) // 타입을 검사한다.
  2016-12-31
  2017-01-01
  ```
+
+ ## 4. 구조 분해 선언과 component 함수
+ **구조 분해 선언**도 관례이다. 구조 분해를 사용하면 복합적인 값을 분해해서 여러 다른 변수를 한꺼번에 초기화할 수 있다.
+ ```kotlin
+ >>> val p = Point(10, 20)
+ >>> val (x, y) = p
+ >>> println(x) // 10
+ >>> println(y) // 20
+ ```
+ 구조 분해 선언은 일반 변수 선언과 비슷하지만 =의 좌변에 여러 변수를 괄호로 묶었다는 점이 다르다.
+
+ 내부에서 구조 분해 선언은 다시 관례를 사용한다. 구조 분해 선언의 각 변수를 초기화하기 위해 componentN이라는 함수를 호출한다. 여기서 N은 구조 분해 선언에 있는 변수 위치에 따라 붙는 번호다.
+
+ ![](../assets/kotlin-componentN-flow.png)
+
+ **data 클래스의 주 생성자에 들어있는 프로퍼티에 대해서는 컴파일러가 자동으로 componentN 함수를 만들어준다.**
+
+ 다음 예제는 데이터 타입이 아닌 클래스에서 이런 함수를 어떻게 구현하는지 보여준다.
+ ```kotlin
+ class Point(val x: Int, val y: Int) {
+  operator fun component1() = x
+  operator fun component2() = y
+ }
+ ```
+ **구조 분해 선언은 함수에서 여러 값을 반환할 때 유용하다.** 여러 값을 한꺼번에 반환해야 하는 함수가 있다면 반환해야 하는 모든 값이 들어갈 데이터 클래스를 정의하고 함수의 반환 타입을 그 데이터 클래스로 바꾼다. 구조 분해 선언 구문을 사용하면 이런 함수가 반환하는 값을 쉽게 풀어서 여러 변수에 넣을 수 있다.
+ ```kotlin
+ data class NameComponents(val name: String, // 값을 저장하기 위한 데이터 클래스를 선언한다.
+                            val extension: String)
+
+ fun splitFilename(fullName: String): NameComponents {
+  val result = fullName.split('.', limit = 2)
+  return NameComponents(result[0], result[1]) // 함수에서 데이터 클래스의 인스턴스를 반환한다.
+ }
+ >>> val (name, ext) = splitFilename("example.kt") // 구조 분해 선언 구문을 사용해 데이터 클래스를 푼다.
+ >>> println(name) // example
+ >>> println(ext) // kt
+ ```
+
+ 배열이나 컬렉션에도 componentN 함수가 있음을 안다면 이 예제를 더 개선할 수 있다. 크기가 정해진 컬렉션을 다루는 경우 구조 분해가 특히 더 유용하다.
+ ```kotlin
+ data class NameComponents (val name: String, val extension: String)
+
+ fun splitFilename(fullName: String): NameComponents {
+  val (name, extension) = fullName.split('.', limit = 2)
+  return NameComponents(name, extension)
+ }
+ ```
+ 코틀린 표준 라이브러리에서는 맨 앞의 다섯 원소에 대한 componentN을 제공한다. 표준 라이브러리의 Pair나 Triple 클래스를 사용하면 함수에서 여러 값을 더 간단하게 반환할 수 있다.
+
+ ### 구조 분해 선언과 루프
+ **함수 본문 내의 선언문뿐 아니라 변수 선언이 들어갈 수 있는 장소라면 어디든 구조 분해 선언을 사용할 수 있다.** 예를 들어 루프 안에서도 구조 분해 선언을 사용할 수 있다.
+ ```kotlin
+ fun printEntries(map: Map<String, String>) {
+  for((key, value) in map) {
+    println("$key -> $value")
+  }
+ }
+ >>> val map = mapOf("Oracle" to "Java", "JetBrains" to "Kotlin")
+ >>> printEntries(map)
+ Oracle -> Java
+ JetBrains -> Kotlin
+ ```
+ 코틀린 표준 라이브러리에는 맵에 대한 확장 함수로 iterator가 들어있다. 그 iterator는 맵 원소에 대한 이터레이터를 반환한다. 따라서 자바와 달리 코틀린에서는 맵을 직접 이터레이션할 수 있다. 또한 코틀린 라이브러리는 Map.Entry에 대한 확장 함수로 component1과 component2를 제공한다.
+ ```kotlin
+ for (entry in map.entries) {
+  val key = entry.component1()
+  val value = entry.component2()
+ }
+ ```
+
+ ## 5. 프로퍼티 접근자 로직 재활용: 위임 프로퍼티
+ * 위임 프로퍼티를 사용하면 값을 뒷받침하는 필드에 단순히 저장하는 것보다 더 복잡한 방식으로 작동하는 프로퍼티를 쉽게 구현할 수 있다.
+ * 또한 그 과정에서 접근자 로직을 매번 재구현할 필요도 없다.
+
+ **위임**은 객체가 직접 작업을 수행하지 않고 다른 도우미 객체가 그 작업을 처리하게 맡기는 디자인 패턴을 말한다. 이때 작업을 처리하는 도우미 객체를 **위임 객체**라고 부른다.
+ 
+ ### 위임 프로퍼티 소개
+ 위임 프로퍼티의 일반적인 문법
+ ```kotlin
+ class Foo {
+  var p: Type by Delegate() // Delegate 클래스의 인스턴스를 위임 객체로 사용한다.
+ }
+ ```
+ p 프로퍼티는 접근자 로직을 다른 객체(Delegate 클래스)에게 위임한다. by 뒤에 있는 식을 계산해서 위임에 쓰일 객체를 얻는다. 프로퍼티 위임 객체가 따라야 하는 관례를 따르는 모든 객체를 위임에 사용할 수 있다.
+
+ 다음과 같이 컴파일러는 숨겨진 도우미 프로퍼티를 만들고 그 프로퍼티를 위임 객체의 인스턴스로 초기화한다. p 프로퍼티는 바로 그 위임 객체에게 자신의 작업을 위임한다. 설명을 편하게 하기 위해 이 감춰진 프로퍼티 이름을 delegate라고 하자.
+ ```kotlin
+ class Foo {
+    private val delegate = Delegate() // 컴파일러가 생성한 도우미 프로퍼티다.
+    var p: Type // "p" 프로퍼티를 위해 컴파일러가 생성한 접근자는 "delegate"의 getValue와 setValue 메서드를 호출한다.
+    set(value: Type) = delegate.setValue(..., value)
+    get() = delegate.getValue(...)
+ }
+ ```
+ 프로퍼티 위임 관례를 따르는 Delegate 클래스는 getValue와 setValue 메서드를 제공해야 한다(물론 변경 가능한 프로퍼티만 setValue를 사용한다). 관례를 사용하는 다른 경우와 마찬가지로 getValue와 setValue는 멤버 메서드이거나 확장 함수일 수 있다. Delegate 클래스를 단순화하면 다음과 같다.
+ ```kotlin
+ class Delegate {
+  operator fun getValue(...) { ... } // getValue는 게터를 구현하는 로직을 담는다.
+  operator fun setValue(..., value: Type) { ... } // setValue 메서드는 세터를 구현하는 로직을 담는다.
+ }
+ 
+ class Foo {
+  var p: Type by Delegate() // "by" 키워드는 프로퍼티와 위임 객체를 연결한다.
+ }
+ >>> val foo = Foo()
+ >>> val oldValue = foo.p // foo.p라는 프로퍼티 호출은 내부에서 delegate.getValue(...)를 호출한다.
+ >>> foo.p = newValue // 프로퍼티 값을 변경하는 문장은 내부에서 delegate.setValue(..., newValue)를 호출한다.
+ ```
+ foo.p는 일반 프로퍼티처럼 쓸 수 있고, 일반 프로퍼티 같아 보인다. 하지만 실제로 p의 게터나 세터는 Delegate 타입의 위임 프로퍼티 객체에 있는 메서드를 호출한다.
+
+ ### 위임 프로퍼티 사용: by lazy()를 사용한 프로퍼티 초기화 지연
+ **지연 초기화**는 객체의 일부분을 초기화하지 않고 남겨뒀다가 실제로 그 부분의 값이 필요할 경우 초기화할 때 흔히 쓰이는 패턴이다.
+
+ 지연 초기화 패턴을 사용하는 예
+ * 초기화 과정에 자원을 많이 사용하거나
+ * 객체를 사용할 때마다 꼭 초기화하지 않아도 되는 프로퍼티
+
+ 지연 초기화를 구현한 클래스
+ ```kotlin
+ class Email { ... }
+ fun loadEmails(person: Person): List<Email> {
+  println("${person.name}의 이메일을 가져옴")
+  return listOf(/*...*/)
+ }
+
+ class Person(val name: String) {
+  private var_emails: List<Email>? = null // 데이터를 저장하고 emails의 위임 객체 역할을 하는 _emails 프로퍼티
+  val emails: List<Email>
+    get() {
+      if(_emails == null) {
+        _emails = loadEmails(this) // 최초 접근 시 이메일을 가져온다.
+      }
+      return _emails!! // 저장해 둔 데이터가 있으면 그 데이터를 반환한다.
+    }
+ }
+ >>> val p = Person("Alice")
+ >>> p.emails // 최초로 emails를 읽을 때 단 한 번만 이메일을 가져온다.
+ Load emails for Alice
+ >>> p.emails
+ ```
+ 여기서는 **뒷받침하는 프로퍼티**라는 기법을 사용한다. 하지만 이런 코드를 만드는 일은 약간 성가시다. 게다가 이 구현은 스레드 안전하지 않아서 언제나 제대로 작동한다고 말할 수도 없다.
+
+ 코틀린의 위임 프로퍼티를 사용하면 이 코드가 훨씬 더 간단해진다. 위임 프로퍼티는 데이터를 저장할 때 쓰이는 뒷받침하는 프로퍼티와 값이 오직 한 번만 초기화됨을 보장하는 게터 로직을 함께 캡슐화해준다. 예제와 같은 경우를 위한 위임 객체를 반환하는 표준 라이브러리 함수가 바로 **lazy**다.
+ ```kotlin
+ class Person(val name: String) {
+  val emails by lazy { loadEmails(this) }
+ }
+ ```
+ lazy 함수는 코틀린 관례에 맞는 시그니처의 getValue 메서드가 들어있는 객체를 반환한다. 따라서 lazy를 by 키워드와 함께 사용해 위임 프로퍼티를 만들 수 있다. lazy함수의 인자는 값을 초기화할 때 호출할 람다다. lazy 함수는 기본적으로 스레드 안전하다. 하지만 필요에 따라 동기화에 사용할 락을 lazy 함수에 전달할 수도 있고, 다중 스레드 환경에서 사용하지 않을 프로퍼티를 위해 lazy 함수가 동기화를 하지 못하게 막을 수도 있다.
