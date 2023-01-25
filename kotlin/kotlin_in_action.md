@@ -151,6 +151,7 @@
           3. [자바에서 코틀린 함수 타입 사용](#자바에서-코틀린-함수-타입-사용)
           4. [디폴트 값을 지정한 함수 타입 파라미터나 널이 될 수 있는 함수 타입 파라미터](#디폴트-값을-지정한-함수-타입-파라미터나-널이-될-수-있는-함수-타입-파라미터)
           5. [함수를 함수에서 반환](#함수를-함수에서-반환)
+          6. [람다를 활용한 중복 제거](#람다를-활용한-중복-제거)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -3545,4 +3546,46 @@ if(value is String) // 타입을 검사한다.
  >>> println("Shipping costs ${calculator(Order(3))}") // 반환받은 함수를 호출한다.
  Shipping costs 12.3
  ```
+ 다른 함수를 반환하는 함수를 정의하려면 함수의 반환 타입으로 함수 타입을 지정해야 한다. 함수를 반환하려면 return 식에 람다나 멤버 참조나 함수 타입의 값을 계산하는 식 등을 넣으면 된다.
+
+ ### 람다를 활용한 중복 제거
+ 함수 타입과 람다 식은 재활용하기 좋은 코드를 만들 때 쓸 수 있는 훌륭한 도구다. 람다를 사용할 수 없는 환경에서는 아주 복잡한 구조를 만들어야만 피할 수 있는 코드 중복도 람다를 활용하면 간결하고 쉽게 제거할 수 있다.
+
+ 1. 사이트 방문 데이터를 하드 코딩한 필터를 사용해 분석
+ ```kotlin
+ val averageWindowsDuration = log
+      .filter { it.os == OS.WINDOWS }
+      .map(SiteVisit::duration)
+      .average()
+ >>> println(averageWindowsDuration) // 23.0
+ ```
+
+ 2. 일반 함수를 통해 중복 제거
+ ```kotlin
+ fun List<SiteVisit>.averageDurationFor(os: Os) = // 중복 코드를 별도 함수로 추출한다.
+        filter { it.os == os }.map(SiteVisit::duration).average()
+ >>> println(log.averageDurationFor(OS.WINDOWS)) // 23.0
+ >>> println(log.averageDurationFor(OS.MAC)) // 22.0
+ ```
+ 이 함수를 확장으로 정의함에 따라 가독성이 개선되었다. 하지만 이 함수는 충분히 강력하지 않다. 플랫폼을 표현하는 간단한 파라미터로는 다음 상황을 처리할 수 없다.
+
+ 3. 복잡하게 하드코딩한 필터를 사용해 방문 데이터 분석
+ ```kotlin
+ val averageMobileDuration = log
+      .filter { it.os in setOf(OS.IOS, OS.ANDROID) }
+      .map(SiteVisit::duration)
+      .average()
+ >>> println(averageMobileDuration) // 12.15
+ ```
+ 게다가 "ios 사용자의 /signup 페이지 평균 방문 시간은?"과 같이 더 복잡한 질의를 사용해 방문 기록을 분석하고 싶을 수 있다. 이럴 때 람다가 유용하다. 함수 타입을 사용하면 필요한 조건을 파라미터로 뽑아낼 수 있다.
  
+ 4. 고차 함수를 사용해 중복 제거하기
+ ```kotlin
+ fun List<SiteVisit>.averageDurationFor(predicate: (SiteVisit) -> Boolean) =
+          filter(predicate).map(SiteVisit::duration).average()
+ >>> println(log.averageDurationFor {
+  ... it.os in setOf(OS.ANDROID, OS.IOS) }) // 12.15
+ >>> println(log.averageDurationFor {
+  ... it.os == OS.IOS && it.path == "/signup" }) // 8.0
+ ```
+ 코드 중복을 줄일 때 함수 타입이 상당히 도움이 된다.
