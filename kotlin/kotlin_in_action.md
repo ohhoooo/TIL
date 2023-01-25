@@ -143,6 +143,14 @@
           3. [위임 프로퍼티 구현](#위임-프로퍼티-구현)
           4. [위임 프로퍼티 컴파일 규칙](#위임-프로퍼티-컴파일-규칙)
           5. [프로퍼티 값을 맵에 저장](#프로퍼티-값을-맵에-저장)
+          6. [프레임워크에서 위임 프로퍼티 활용](#프레임워크에서-위임-프로퍼티-활용)
+  8. [고차 함수: 파라미터와 반환 값으로 람다 사용](#08장-고차-함수-파라미터와-반환-값으로-람다-사용)
+      1. [고차 함수 정의](#1-고차-함수-정의)
+          1. [함수 타입](#함수-타입)
+          2. [인자로 받은 함수 호출](#인자로-받은-함수-호출)
+          3. [자바에서 코틀린 함수 타입 사용](#자바에서-코틀린-함수-타입-사용)
+          4. [디폴트 값을 지정한 함수 타입 파라미터나 널이 될 수 있는 함수 타입 파라미터](#디폴트-값을-지정한-함수-타입-파라미터나-널이-될-수-있는-함수-타입-파라미터)
+          5. [함수를 함수에서 반환](#함수를-함수에서-반환)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -3356,3 +3364,185 @@ if(value is String) // 타입을 검사한다.
 
  ### 프레임워크에서 위임 프로퍼티 활용
  ...
+
+# 08장 고차 함수: 파라미터와 반환 값으로 람다 사용
+
+ ## 1. 고차 함수 정의
+ **고차 함수**는 다른 함수를 인자로 받거나 함수를 반환하는 함수다. 코틀린에서는 람다나 함수 참조를 사용해 **함수를 값으로 표현할 수 있다.** 따라서 고차 함수는 람다나 함수 참조를 인자로 넘길 수 있거나 람다나 함수 참조를 반환하는 함수다. 물론 함수를 인자로 받는 동시에 함수를 반환하는 함수도 고차 함수다.
+ ```kotlin
+ list.filter { x > 0 } // 술어 함수를 인자로 받음
+ ```
+ 
+ ### 함수 타입
+ 이 경우 컴파일러는 sum과 action이 함수 타입임을 추론한다.
+ ```kotlin
+ val sum = { x: Int, y: Int -> x + y }
+ val action = { println(42) }
+ ```
+
+ 각 변수에 구체적인 타입 선언을 추가
+ ```kotlin
+ val sum: (Int, Int) -> Int = { x, y -> x + y } // Int 파라미터를 2개 받아서 Int 값을 반환하는 함수
+ val action: () -> Unit = { println(42) } // 아무 인자도 받지 않고 아무 값도 반환하지 않는 함수
+ ```
+
+ 함수 타입을 정의하려면 **함수 파라미터의 타입을 괄호 안에 넣고, 그 뒤에 화살표(->)를 추가한 다음, 함수의 반환 타입을 지정하면 된다.** Unit 타입은 함수 타입을 선언할 때는 반환 타입을 반드시 명시해야 한다.
+
+ 변수 타입을 함수 타입으로 지정하면 함수 타입에 있는 파라미터로부터 람다의 파라미터 타입을 유추할 수 있다. 따라서 람다 식 안에서 굳이 파라미터 타입을 적을 필요가 없다.
+
+ 함수 타입에서도 반환 타입을 널이 될 수 있는 타입으로 지정할 수 있다.
+ ```kotlin
+ var canReturnNull: (Int, Int) -> Int? = { x, y -> null }
+ ```
+
+ 널이 될 수 있는 함수 타입 변수를 정의할 수도 있다.
+ ```kotlin
+ var funOrNull: ((Int, Int) -> Int)? = null
+ ```
+
+ #### 파라미터 이름과 함수 타입
+ 함수 타입에서 파라미터 이름을 지정할 수도 있다.
+ ```kotlin
+ fun performRequest(
+  url: String,
+  callback: (code: Int, content: String) -> Unit // 함수 타입의 각 파라미터에 이름을 붙인다.
+ ) { ... }
+ >>> val url = "http://kotl.in"
+ >>> performRequest(url) { code, content -> ... } // API에서 제공하는 이름을 람다에 사용할 수 있다.
+ >>> performRequest(url) { code, page -> ... } // 하지만 그냥 원하는 다른 이름을 붙여도 된다.
+ ```
+ 파라미터 이름은 타입 검사 시 무시된다.
+
+ ### 인자로 받은 함수 호출
+ ```kotlin
+ fun twoAndThree(operation: (Int, Int) -> Int) { // 함수 타입인 파라미터를 선언한다.
+  val result = operation(2, 3) // 함수 타입인 파라미터를 호출한다.
+  println("The result is $result")
+ }
+ >>> twoAndThree { a, b -> a + b } // The result is 5
+ >>> twoAndThree { a, b -> a * b } // The result is 6
+ ```
+ 인자로 받은 함수를 호출하는 구문은 일반 함수를 호출하는 구문과 같다.
+
+ String에 대한 filter 구현
+ ```kotlin
+ fun String.filter(predicate: (Char) -> Boolean) : String
+ // String. : 수신 객체 타입
+ // predicate : 파라미터 이름
+ // (Char) -> Boolean : 파라미터 함수 타입
+ // (Char) : 파라미터로 받는 함수의 파라미터 타입
+ // Boolean : 파라미터로 받는 함수의 반환 타입
+ ```
+ filter 함수는 술어를 파라미터로 받는다. 술어는 인자로 받은 문자가 filter 함수가 돌려주는 결과 문자열에 남아 있기를 바라면 true를 반환하고 문자열에서 사라지기를 바라면 false를 반환하면 된다.
+
+ filter 함수를 구현하는 방법(단순하게 만든 버전)
+ ```kotlin
+ fun String.filter(predicate: (Char) -> Boolean): String {
+  val sb = StringBuilder()
+  for (index in 0 until length) {
+    val element = get(index)
+    if (predicate(element)) sb.append(element) // "predicate" 파라미터로 전달받은 함수를 호출한다.
+  }
+  return sb.toString()
+ }
+ >>> println("ab1c".filter { it in 'a'..'z' }) // 람다를 "predicate" 파라미터로 전달한다.
+ abc
+ ```
+
+ ### 자바에서 코틀린 함수 타입 사용
+ 컴파일된 코드 안에서 함수 타입은 일반 인터페이스로 바뀐다. 즉 함수 타입의 변수는 FunctionN 인터페이스를 구현하는 객체를 저장한다. 코틀린 표준 라이브러리는 함수 인자의 개수에 따라 Function0\<R>(인자가 없는 함수), Function1<P1, R>(인자가 하나인 함수) 등의 인터페이스를 제공한다. 각 인터페이스에는 invoke 메서드 정의가 하나 들어있다. invoke를 호출하면 함수를 실행할 수 있다. 함수 타입인 변수는 인자 개수에 따라 적당한 FunctionN 인터페이스를 구현하는 클래스의 인스턴스를 저장하며, 그 클래스의 invoke 메서드 본문에는 람다의 본문이 들어간다.
+
+ 함수 타입을 사용하는 코틀린 함수를 자바에서도 쉽게 호출할 수 있다. 자바 8 람다를 넘기면 자동으로 함수 타입의 값으로 변환된다.
+ ```kotlin
+ /* 코틀린 선언 */
+ fun processTheAnswer(f: (Int) -> Int) {
+  println(f(42))
+ }
+ ```
+ ```Java
+ /* 자바 */
+ >>> processTheAnswer(number -> number + 1); // 43
+ ```
+
+ 자바 8 이전의 자바에서는 필요한 FunctionN 인터페이스의 invoke 메서드를 구현하는 무명 클래스를 넘기면 된다.
+ ```java
+ /* 자바 */
+ >>> processTheAnswer(
+      new Function1<Integer, Integer>() { // 자바 코드에서 코틀린 함수 타입을 사용한다(자바 8 이전).
+        @Override
+        public Integer invoke(Integer number) {
+          System.out.println(number);
+          return number + 1;
+        }
+      }); // 43
+ ```
+
+ 자바에서 코틀린 표준 라이브러리가 제공하는 람다를 인자로 받는 확장 함수를 쉽게 호출할 수 있다. 하지만 수신 객체를 확장 함수의 첫 번째 인자로 명시적으로 넘겨야 하므로 코틀린에서 확장 함수를 호출할 때처럼 코드가 깔끔하지는 않다.
+ ```java
+ /* 자바 */
+ >>> List<String> strings = new ArrayList();
+ >>> strings.add("42");
+ >>> CollectionsKt.forEach(strings, s -> { // strings는 확장 함수의 수신 객체, 코틀린 표준 라이브러리에서 가져온 함수를 자바 코드에서 호출할 수 있다.
+ ...  System.out.println(s);
+ ...  return Unit.INSTANCE; // Unit 타입의 값을 명시적으로 반환해야만 한다.
+ ... });
+ ```
+ 반환 타입이 Unit인 함수나 람다를 자바로 작성할 수도 있다. 하지만 코틀린 Unit 타입에는 값이 존재하므로 자바에서는 그 값을 명시적으로 반환해줘야 한다. (String) -> Unit 처럼 반환 타입이 Unit인 함수 타입의 파라미터 위치에 void를 반환하는 자바 람다를 넘길 수는 없다.
+
+ ### 디폴트 값을 지정한 함수 타입 파라미터나 널이 될 수 있는 함수 타입 파라미터
+ 파라미터를 함수 타입으로 선언할 때도 디폴트 값을 정할 수 있다.
+ ```kotlin
+ fun <T> Collection<T>.joinToString(
+          separator: String = ", ",
+          prefix: String = "",
+          postfix: String = "",
+          transform: (T) -> String = { it.toString() } // 함수 타입 파라미터를 선언하면서 람다를 디폴트 값으로 지정한다.
+ ): String {
+  val result = StringBuilder(prefix)
+  for((index, element) in this.withIndex()) {
+    if (index > 0) result.append(separator)
+    result.append(transform(element)) // "transform" 파라미터로 받은 함수를 호출한다.
+  }
+  result.append(postfix)
+  return result.toString()
+ }
+ >>> val letters = listOf("Alpha", "Beta")
+ >>> println(letters.joinToString()) // 디폴트 변환 함수를 사용한다..
+ Alpha, Beta
+ >>> println(letters.joinToString { it.toLowerCase() }) // 람다를 인자로 전달한다.
+ alpha, beta
+ >>> println(letters.joinToString(separator = "! ", postfix = "! ",
+ ... transform = { it.toUpperCase() })) // 이름 붙인 인자 구문을 사용해 람다를 포함하는 여러 인자를 전달한다.
+ ALPHA! BETA!
+ ```
+ 다른 디폴트 파라미터 값과 마찬가지로 함수 타입에 대한 디폴트 값 선언도 = 뒤에 람다를 넣으면 된다.
+
+ 다른 접근 방법으로 널이 될 수 있는 함수 타입을 사용할 수도 있다. 널이 될 수 있는 함수 타입으로 함수를 받으면 그 함수를 직접 호출할 수 없다.
+ ```kotlin
+ fun foo(callback: (() -> Unit)?) {
+  // ...
+  if(callback != null) {
+    callback()
+  }
+ }
+ ```
+ 함수 타입이 invoke 메서드를 구현하는 인터페이스라는 사실을 활용하면 이를 더 짧게 만들 수 있다. 일반 메서드처럼 invoke도 안전 호출 구문으로 callback?.invoke()처럼 호출할 수 있다.
+
+ ### 함수를 함수에서 반환
+ ```kotlin
+ enum class Delivery { STANDARD, EXPEDITED }
+ class Order(val itemCount: Int)
+
+ fun getShippingCostCalculator(
+      delivery: Delivery): (Order) -> Double { // 함수를 반환하는 함수를 선언한다.
+    if (delivery == Delivery.EXPEDITED) {
+      return { order -> 6 + 2.1 * order.itemCount } // 함수에서
+    }
+    return { order -> 1.2 * order.itemCount } // 람다를 반환한다.
+ }
+ >>> val calculator = // 반환받은 함수를 변수에 저장한다.
+ ...  getShippingCostCalculator(Delivery.EXPEDITED)
+ >>> println("Shipping costs ${calculator(Order(3))}") // 반환받은 함수를 호출한다.
+ Shipping costs 12.3
+ ```
+ 
