@@ -162,6 +162,12 @@
           1. [람다 안의 return문: 람다를 둘러싼 함수로부터 반환](#람다-안의-return문-람다를-둘러싼-함수로부터-반환)
           2. [람다로부터 반환: 레이블을 사용한 return](#람다로부터-반환-레이블을-사용한-return)
           3. [무명 함수: 기본적으로 로컬 return](#무명-함수-기본적으로-로컬-return)
+  9. [제네릭스](#09장-제네릭스)
+      1. [제네릭 타입 파라미터](#1-제네릭-타입-파라미터)
+          1. [제네릭 함수와 프로퍼티](#제네릭-함수와-프로퍼티)
+          2. [제네릭 클래스 선언](#제네릭-클래스-선언)
+          3. [타입 파라미터 제약](#타입-파라미터-제약)
+          4. [타입 파라미터를 널이 될 수 없는 타입으로 한정](#타입-파라미터를-널이-될-수-없는-타입으로-한정)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -3870,3 +3876,158 @@ if(value is String) // 타입을 검사한다.
  people.filter(fun (person) = person.age < 30)
  ```
  무명 함수 안에서 레이블이 붙지 않은 return 식은 무명 함수 자체를 반환시킬 뿐 무명 함수를 둘러싼 다른 함수를 반환시키지 않는다. 사실 return에 적용되는 규칙은 단순히 return은 fun 키워드를 사용해 정의된 가장 안쪽 함수를 반환시킨다는 점이다. 람다 식은 fun을 사용해 정의되지 않으므로 람다 본문의 return은 람다 밖의 함수를 반환시킨다. 무명 함수는 fun을 사용해 정의되므로 그 함수 자신이 바로 가장 안쪽에 있는 fun으로 정의된 함수다. 따라서 무명 함수 본문의 return은 그 무명 함수를 반환시키고, 무명 함수 밖의 다른 함수를 반환시키지 못한다.
+
+# 09장 제네릭스
+
+ ## 1. 제네릭 타입 파라미터
+ 제네릭스를 사용하면 **타입 파라미터**를 받는 타입을 정의할 수 있다. 제네릭 타입의 인스턴스를 만들려면 타입 파라미터를 구체적인 타입 인자로 치환해야 한다.
+
+ 코틀린 컴파일러는 보통 타입과 마찬가지로 타입 인자도 추론할 수 있다.
+ ```kotlin
+ val authors = listOf("Dmitry", "Svetlana")
+ ```
+ 반면에 빈 리스트를 만들어야 한다면 타입 인자를 추론할 근거가 없기 때문에 직접 타입 인자를 명시해야 한다. 
+ 
+ 리스트를 만들 때 변수의 타입을 지정해도 되고 변수를 만드는 함수의 타입 인자를 지정해도 된다.
+ ```kotlin
+ val readers: MutableList<String> = mutableListOf()
+
+ val readers = mutableListOf<String>()
+ ```
+ **자바와 달리 코틀린에서는 제네릭 타입 인자를 프로그래머가 명시하거나 컴파일러가 추론할 수 있어야 한다.**
+
+ ### 제네릭 함수와 프로퍼티
+ 제네릭 함수를 호출할 때는 반드시 구체적 타입으로 타입 인자를 넘겨야 한다.
+
+ 컬렉션을 다루는 라이브러리 함수는 대부분 제네릭 함수다.
+ ```kotlin
+ fun <T> List<T>.slice(indices: IntRange): List<T>
+ ```
+ 함수의 타입 파라미터 T가 수신 객체와 반환 타입에 쓰인다. 이런 함수를 구체적인 리스트에 대해 호출할 때 타입 인자를 명시적으로 지정할 수 있다. 하지만 실제로는 대부분 컴파일러가 타입 인자를 추론할 수 있으므로 그럴 필요가 없다.
+ ```kotlin
+ >>> val letters = ('a'..'z').toList()
+ >>> println(letters.slice<Char>(0..2)) // 타입 인자를 명시적으로 지정한다.
+ [a, b, c]
+ >>> println(letters.slice(10..13)) // 컴파일러는 여기서 T가 Char라는 사실을 추론한다.
+ [k, l, m, n]
+ ```
+
+ ```kotlin
+ val authors = listOf("Dmitry", "Svetlana")
+ val readers = mutableListOf<String>( ... )
+
+ fun <T> List<T>.filter(predicate: (T) -> Boolean): List<T>
+ >>> readers.filter { it !in authors }
+ ```
+ 람다 파라미터에 의해 자동으로 만들어진 변수 it의 타입은 T라는 제네릭 타입이다. 컴파일러는 filter가 List\<T>타입의 리스트에 대해 호출될 수 있다는 사실과 filter의 수신 객체인 reader의 타입이 List<String>이라는 사실을 알고 그로부터 T가 String이라는 사실을 추론한다.
+
+ **클래스나 인터페이스 안에 정의된 메서드, 확장 함수 또는 최상위 함수에서 타입 파라미터를 선언할 수 있다.** 확장 함수에서는 수신 객체나 파라미터 타입에 타입 파라미터를 사용할 수 있다(예를 들어 filter는 수신 객체 타입 List\<T>와 파라미터 함수 타입 (T) -> Boolean에 타입 파라미터 T를 사용한다).
+
+ 제네릭 함수를 정의할 때와 마찬가지 방법으로 제네릭 확장 프로퍼티를 선언할 수 있다.
+ ```kotlin
+ val <T> List<T>.penultimate: T //  모든 리스트 타입에 이 제네릭 확장 프로퍼티를 사용할 수 있다.
+    get() = this[size - 2]
+ >>> println(listOf(1, 2, 3, 4).penultimate) // 이 호출에서 타입 파라미터 T는 Int로 추론된다.
+ 3
+ ```
+
+ #### 확장 프로퍼티만 제네릭하게 만들 수 있다.
+ 일반 프로퍼티는 타입 파라미터를 가질 수 없다. 클래스 프로퍼티에 여러 타입의 값을 저장할 수는 없으므로 제네릭한 일반 프로퍼티는 말이 되지 않는다.
+ ```kotlin
+ >>> val <T> x: T = TODO() // 이렇게 만들 수 없다.
+ ```
+
+ ### 제네릭 클래스 선언
+ **자바와 마찬가지로 코틀린에서도 타입 파라미터를 넣은 꺾쇠 기호(<>)를 클래스(또는 인터페이스) 이름 뒤에 붙이면 클래스(인터페이스)를 제네릭하게 만들 수 있다.** 타입 파라미터를 이름 뒤에 붙이고 나면 클래스 본문 안에서 타입 파라미터를 다른 일반 타입처럼 사용할 수 있다.
+ ```kotlin
+ interface List<T> { // List 인터페이스에 T라는 타입 파라미터를 정의한다.
+  operator fun get(index: Int): T // 인터페이스 안에서 T를 일반 타입처럼 사용할 수 있다.
+ }
+ ```
+
+ 제네릭 클래스를 확장하는 클래스(또는 제네릭 인터페이스를 구현하는 클래스)를 정의하려면 기반 타입의 제네릭 파라미터에 대해 타입 인자를 지정해야 한다. 이때 구체적인 타입을 넘길 수도 있고(하위 클래스도 제네릭 클래스라면) 타입 파라미터로 받은 타입을 넘길 수도 있다.
+ ```kotlin
+ class StringList : List<String> { // 이 클래스는 구체적인 타입 인자로 String을 지정해 List를 구현한다.
+  override fun get(index: Int): String = ... }
+
+ class ArrayList<T> : List<T> { // ArrayList의 제네릭 타입 파라미터 T를 List의 타입 인자로 넘긴다.
+  override fun get(index: Int): T = ...
+ }
+ ```
+ StringList 클래스는 String 타입의 원소만을 포함한다. 따라서 String을 기반 타입의 타입 인자로 지정한다. 하위 클래스에서 상위 클래스에 정의된 함수를 오버라이드하거나 사용하려면 타입 인자 T를 구체적 타입 String으로 치환해야 한다. 따라서 StringList에서는 fun get(Int): T가 아니라 fun get(Int): String이라는 시그니처를 사용한다.
+
+ ArrayList 클래스는 자신만의 타입 파라미터 T를 정의하면서 그 T를 기반 클래스의 타입 인자로 사용한다. 여기서 ArrayList\<T>의 T와 앞에서 본 List\<T>의 T는 같지 않다. ArrayList\<T>의 T는 앞에서 본 List\<T>의 T와 전혀 다른 타입 파라미터며, 실제로는 T가 아니라 다른 이름을 사용해도 의미에는 아무 차이가 없다.
+
+ 심지어 클래스가 자기 자신을 타입 인자로 참조할 수도 있다. Comparable 인터페이스를 구현하는 클래스가 이런 패턴의 예다. 비교 가능한 모든 값은 자신을 같은 타입의 다른 값과 비교하는 방법을 제공해야만 한다.
+ ```kotlin
+ interface Comparable<T> {
+  fun compareTo(other: T): Int
+ }
+
+ class String : Comparable<String> {
+  override fun compareTo(other: String): Int = ...
+ }
+ ```
+ String 클래스는 제네릭 Comparable 인터페이스를 구현하면서 그 인터페이스의 타입 파라미터 T로 String 자신을 지정한다.
+
+ ### 타입 파라미터 제약
+ **타입 파라미터 제약**은 클래스나 함수에 사용할 수 있는 타입 인자를 제한하는 기능이다. 예를 들어 리스트에 속한 모든 원소의 합을 구하는 sum 함수를 생각할 때 List\<Int>나 List\<Double>에 그 함수를 적용할 수 있지만 List\<String>등에는 그 함수를 적용할 수 없다. sum 함수가 타입 파라미터로 숫자 타입만을 허용하게 정의하면 이런 조건을 표현할 수 있다.
+
+ 어떤 타입을 제네릭 타입의 타입 파라미터에 대한 **상한**으로 지정하면 그 제네릭 타입을 인스턴스화할 때 사용하는 타입 인자는 반드시 그 상한 타입이거나 그 상한 타입의 하위 타입이여야 한다(여기서는 하위 타입dmf 하위 클래스와 동의어라고 생각).
+
+ 제약을 가하려면 타입 파라미터 이름 뒤에 콜론(:)을 표시하고 그 뒤에 상한 타입을 적으면 된다. 자바에서는 \<T extends Number> T sum(List\<T> list)처럼 extends를 써서 같은 개념을 표현한다.
+ ```kotlin
+ fun <T: Number> List<T>.sum(): T
+ ```
+
+ 타입 파라미터 T에 대한 상한을 정하고 나면 T 타입의 값을 그 상한 타입의 값으로 취급할 수 있다.
+ ```kotlin
+ fun <T: Number> oneHalf(value: T): Double { // Number를 타입 파라미터 상한으로 정한다.
+  return value.toDouble() / 2.0 // Number 클래스에 정의된 메서드를 호출한다.
+ }
+ ```
+ ```kotlin
+ fun <T: Comparable<T>> max(first: T, second: T): T {
+  return if (first > second) first else second
+ }
+ >>> println(max("kotlin", "java")) / kotlin // 문자열은 알파벳순으로 비교된다.
+ ```
+ max 함수에서 first의 타입 T는 Comparable<T>를 확장하므로 first를 다른 T 타입 값인 second와 비교할 수 있다.
+
+ 아주 드물지만 타입 파라미터에 대해 둘 이상의 제약을 가해야 하는 경우도 있다. 그런 경우에는 약간 다른 구문을 사용한다.
+ ```kotlin
+ fun <T> ensureTrailingPeriod(seq: T)
+    where T : CharSequence, T : Appendable { // 타입 파라미터 제약 목록이다.
+      if(!seq.endsWith('.')) { // CharSequence 인터페이스의 확장 함수를 호출한다.
+        seq.append('.') // Appendable 인터페이스의 메서드를 호출한다.
+      }
+    }
+ >>> val helloWorld = StringBuilder("Hello World")
+ >>> ensureTrailingPeriod(helloWorld)
+ >>> println(helloWorld) // Hello World.
+ ```
+ 이 예제는 타입 인자가 CharSequence와 Appendable 인터페이스를 반드시 구현해야 한다. 이는 데이터에 접근하는 연산(endsWith)과 데이터를 변환하는 연산(append)을 T 타입의 값에게 수행할 수 있다는 뜻이다.
+
+ ### 타입 파라미터를 널이 될 수 없는 타입으로 한정
+ 제네릭 클래스나 함수를 정의하고 그 타입을 인스턴스화할 때는 널이 될 수 있는 타입을 포함하는 어떤 타입으로 타입 인자를 지정해도 타입 파라미터를 치환할 수 있다. 아무런 상한을 정하지 않은 타입 파라미터는 결과적으로 Any?를 상한으로 정한 파라미터와 같다.
+ ```kotlin
+ class Processor<T> {
+  fun process(value: T) {
+    value?.hashCode() // "value"는 널이 될 수 있다. 따라서 안전한 호출을 사용해야 한다.
+  }
+ }
+ ```
+ **process 함수에서 value 파라미터의 타입 T에는 물음표(?)가 붙어있지 않지만 실제로는 T에 해당하는 타입 인자로 널이 될 수 있는 타입을 넘길 수도 있다.**
+ ```kotlin
+ val nullableStringProcessor = Processor<String?>() // 널이 될 수 있는 타입인 String?이 T를 대신한다.
+ nullableStringProcessor.process(null) // 이 코드는 잘 컴파일되며 "null"이 "value" 인자로 지정된다.
+ ```
+ 
+ **항상 널이 될 수 없는 타입만 타입 인자로 받게 만들려면 타입 파라미터에 제약을 가해야 한다. 널 가능성을 제외한 아무런 제약도 필요 없다면 Any? 대신 Any를 상한으로 사용하면 된다.**
+ ```kotlin
+ class Processor<T: Any> { // "null"이 될 수 없는 타입 상한을 지정한다.
+  fun process(value: T) {
+    value.hashCode() // T 타입의 "value"는 "null"이 될 수 없다.
+  }
+ }
+ ```
