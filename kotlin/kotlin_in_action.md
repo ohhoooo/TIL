@@ -168,6 +168,9 @@
           2. [제네릭 클래스 선언](#제네릭-클래스-선언)
           3. [타입 파라미터 제약](#타입-파라미터-제약)
           4. [타입 파라미터를 널이 될 수 없는 타입으로 한정](#타입-파라미터를-널이-될-수-없는-타입으로-한정)
+      2. [실행 시 제네릭스의 동작: 소거된 타입 파라미터와 실체화된 타입 파라미터](#2-실행-시-제네릭스의-동작-소거된-타입-파라미터와-실체화된-타입-파라미터)
+          1. [실행 시점의 제네릭: 타입 검사와 캐스트](#실행-시점의-제네릭-타입-검사와-캐스트)
+          2. [실체화한 타입 파라미터를 사용한 함수 선언](#실체화한-타입-파라미터를-사용한-함수-선언)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -4031,3 +4034,91 @@ if(value is String) // 타입을 검사한다.
   }
  }
  ```
+
+ ## 2. 실행 시 제네릭스의 동작: 소거된 타입 파라미터와 실체화된 타입 파라미터
+
+ ### 실행 시점의 제네릭: 타입 검사와 캐스트
+ 자바와 마찬가지로 코틀린 제네릭 타입 인자 정보는 런타임에 지워진다. 이는 제네릭 클래스 인스턴스가 그 인스턴스를 생성할 때 쓰인 타입 인자에 대한 정보를 유지하지 않는다는 뜻이다. 예를 들어 List\<String> 객체를 만들고 그 안에 문자열을 여럿 넣더라도 실행 시점에는 그 객체를 오직 List로만 볼 수 있다. 그 List 객체가 어떤 타입의 원소를 저장하는지 실행 시점에는 알 수 없다.
+
+ ```kotlin
+ val list1: List<String> = listOf("a", "b")
+ val list2: List<Int> = listOf(1, 2, 3)
+ ```
+ 컴파일러는 두 리스트를 서로 다른 타입으로 인식하지만 실행 시점에 그 둘은 완전히 같은 타입의 객체다. 그럼에도 불구하고 보통은 List\<String>에는 문자열만 들어있고 List\<Int>에는 정수만 들어있다고 가정할 수 있는데, 이는 컴파일러가 타입 인자를 알고 올바른 타입의 값만 각 리스트에 넣도록 보장해주기 때문이다.
+
+ **타입 소거로 인해 생기는 한계가 있다. 타입 인자를 따로 저장하지 않기 때문에 실행 시점에 타입 인자를 검사할 수 없다.** 예를 들어 어떤 리스트가 문자열로 이뤄진 리스트인지 다른 객체로 이뤄진 리스트인지를 실행 시점에 검사할 수 없다. 일반적으로 말하자면 is 검사에서 타입 인자로 지정한 타입을 검사할 수는 없다.
+ ```kotlin
+ >>> if (value is List<String>) { ... }
+ ERROR: Cannot check for instance of erased type
+ ```
+ 실행 시점에 어떤 값이 List인지 여부는 확실히 알아낼 수 있지만 그 리스트가 String의 리스트인지, Person의 리스트인지 혹은 다른 어떤 타입의 리스트인지는 알 수가 없다. 다만 저장해야 하는 타입 정보의 크기가 줄어들어서 전반적인 메모리 사용량이 줄어든다는 제네릭 타입 소거 나름의 장점이 있다.
+
+ 코틀린에서는 타입 인자를 명시하지 않고 제네릭 타입을 사용할 수 없다. **스타 프로젝션**을 사용하면 어떤 값이 집합이나 맵이 아니라 리스트라는 사실을 확인할 수 있다.
+ ```kotlin
+ if(value is List<*>) { ... }
+ ```
+ 타입 파라미터가 2개 이상이라면 모든 타입 파라미터에 *를 포함시켜야 한다.
+
+ **as나 as? 캐스팅에도 여전히 제네릭 타입을 사용할 수 있다.** 하지만 기저 클래스는 같지만 타입 인자가 다른 타입으로 캐스팅해도 여전히 캐스팅에 성공한다는 점을 조심해야 한다. 실행 시점에는 제네릭 타입의 타입 인자를 알 수 없으므로 캐스팅은 항상 성공한다. 그런 타입 캐스팅을 사용하면 컴파일러가 "unchecked cast"이라는 경고를 해준다. 하지만 컴파일러는 단순히 경고만 하고 컴파일을 진행하므로 다음 코드처럼 값을 원하는 제네릭 타입으로 캐스팅해 사용해도 된다.
+ ```kotlin
+ fun printSum(c: Collection<*>) {
+  val intList = c as? List<Int> // 여기서 Unchecked cast: List<*> to List<Int> 경고 발생
+    ?: throw IllegalArgumentException("List is expected")
+  println(intList.sum())
+ }
+ >>> printSum(listOf(1, 2, 3)) // 예상대로 작동한다.
+ 6
+ ```
+ 정수 리스트에 대해서는 합계를 출력하고 정수 집합에 대해서는 IllegalArgumentException이 발생한다. 하지만 잘못된 타입의 원소가 들어있는 리스트를 전달하면 실행 시점에 ClassCastException이 발생한다.
+ ```kotlin
+ >>> printSum(setOf(1, 2, 3)) // IllegalArgumentException: List is excepted
+ >>> printSum(listOf("a", "b", "c")) // as? 캐스팅은 성공하지만 나중에 다른 예외가 발생한다.
+ ClassCastException: String cannot be cast to Number
+ ```
+
+ 코틀린 컴파일러는 컴파일 시점에 타입 정보가 주어진 경우에는 is 검사를 수행하게 허용할 수 있을 정도로 똑똑하다.
+ ```kotlin
+ fun printSum(c: Collection<Int>) {
+  if (c is List<Int>) { // 이 검사는 올바르다.
+    println(c.sum())
+  }
+ }
+ ```
+ 컴파일 시점에 c 컬렉션(리스트나 집합 등 종류는 문제가 안 된다)이 Int 값을 저장한다는 사실이 알려져 있으므로 c가 List\<Int>인지 검사할 수 있다.
+
+ ### 실체화한 타입 파라미터를 사용한 함수 선언
+ 코틀린 제네릭 타입의 타입 인자 정보는 실행 시점에 지워진다. 따라서 제네릭 클래스의 인스턴스가 있어도 그 인스턴스를 만들 때 사용한 타입 인자를 알아낼 수 없다. 제네릭 함수의 타입 인자도 마찬가지다. 제네릭 함수가 호출되도 그 함수의 본문에서는 호출 시 쓰인 타입 인자를 알 수 없다.
+ ```kotlin
+ >>> fun <T> isA(value: Any) = value is T
+ Error: Cannot check for instance of erased type: T
+ ```
+ 이는 일반적으로 사실이다. **하지만 인라인 함수의 타입 파라미터는 실체화되므로 실행 시점에 인라인 함수의 타입 인자를 알 수 있다.** 타입 인자 실체화는 인라인 함수가 유용한 또 다른 이유이다.
+
+ isA 함수를 **인라인 함수로 만들고 타입 파라미터를 reified로 지정하면 value의 타입이 T의 인스턴스인지를 실행 시점에 검사할 수 있다.**
+ ```kotlin
+ inline fun <reified T> isA(value: Any) = value is T
+ >>> println(isA<String>("abc")) // true
+ >>> println(isA<String>(123)) // false
+ ```
+
+ 실체화한 타입 파라미터를 사용하는 예
+ ```kotlin
+ >>> val items = listOf("one", 2, "three")
+ >>> println(items.filterIsInstance<String>()) // [one, three]
+ ```
+ filterIsInstance는 인자로 받은 컬렉션의 원소 중에서 타입 인자로 지정한 클래스의 인스턴스만을 모아서 만든 리스트를 반환한다. 이 함수의 반환 타입은 List\<String>이다. 여기서는 타입 인자를 실행 시점에 알 수 있고 filterIsInstance는 그 타입 인자를 사용해 리스트의 원소 중에 타입 인자와 타입이 일치하는 원소만을 추려낼 수 있다.
+
+ ```kotlin
+ // filterIsInstance를 간단하게 정리한 버전
+ inline fun <reified T> // "reified" 키워드는 이 타입 파라미터가 실행 시점에 지워지지 않음을 표시한다.
+      Iterable<*>.filterIsInstance(): List<T> {
+    val destination = mutableListOf<T>()
+    for (element in this) {
+      if(element is T) { // 각 원소가 타입 인자로 지정한 클래스의 인스턴스인지 검사할 수 있다.
+        destination.add(element)
+      }
+    }
+    return destination
+ }
+ ```
+ 앞에서 함수의 파라미터 중에 함수 타입인 파라미터가 있고 그 파라미터에 해당하는 인자(람다)를 함께 인라이닝함으로써 얻는 이익이 더 큰 경우에만 함수를 인라인 함수로 만들어라고 했지만 이 경우에는 함수를 inline으로 만드는 이유가 성능 향상이 아니라 실체화한 타입 파라미터를 사용하기 위함이다.
