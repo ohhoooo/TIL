@@ -179,6 +179,7 @@
           3. [공변성: 하위 타입 관계를 유지](#공변성-하위-타입-관계를-유지)
           4. [반공변성: 뒤집힌 하위 타입 관계](#반공변성-뒤집힌-하위-타입-관계)
           5. [사용 지점 변성: 타입이 언급되는 지점에서 변성 지정](#사용-지점-변성-타입이-언급되는-지점에서-변성-지정)
+          6. [스타 프로젝션: 타입 인자 대신 * 사용](#스타-프로젝션-타입-인자-대신--사용)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -4383,3 +4384,89 @@ if(value is String) // 타입을 검사한다.
  **클래스 정의에 변성을 직접 기술하면 그 클래스를 사용하는 모든 장소에 그 변성이 적용된다.** 자바는 이를 지원하지 않는다. 대신 클래스를 사용하는 위치에서 와일드카드를 사용해 그때그때 변성을 지정해야 한다.
 
  ### 사용 지점 변성: 타입이 언급되는 지점에서 변성 지정
+ 클래스를 선언하면서 변성을 지정하면 그 클래스를 사용하는 모든 장소에 변성 지정자가 영향을 끼치므로 편리하다. 이런 방식을 **선언 지점 변성**이라 부른다. 자바의 와일드카드 타입(? extends나 ? super)에 익숙하다면 자바는 변성을 다른 방식으로 다룬다는 점을 깨달았을 것이다. 자바에서는 타입 파라미터가 있는 타입을 사용할 때마다 해당 타입 파라미터를 하위 타입이나 상위 타입 중 어떤 타입으로 대치할 수 있는지 명시해야 한다. 이런 방식을 **사용 지점 변성**이라 부른다.
+
+ 코틀린도 사용 지점 변성을 지원한다. 따라서 클래스 안에서 어떤 타입 파라미터가 공변적이거나 반공변적인지 선언할 수 없는 경우에도 특정 타입 파라미터가 나타나는 지점에서 변성을 정할 수 있다.
+
+ MutableList와 같은 상당수의 인터페이스는 타입 파라미터로 지정된 타입을 소비하는 동시에 생산할 수 있기 때문에 일반적으로 공변적이지도 반공변적이지도 않다. 하지만 그런 인터페이스 타입의 변수가 한 함수 안에서 생산자나 소비자 중 단 한 가지 역할만을 담당하는 경우가 자주 있다.
+ ```kotlin
+ // 무공변 파라미터 타입을 사용하는 데이터 복사 함수
+ fun <T> copyData(source: MutableList<T>, destination: MutableList<T>) {
+  for(item in source) {
+    destination.add(item)
+  }
+ }
+ ```
+ 이 함수는 컬렉션의 원소를 다른 컬렉션으로 복사한다. 두 컬렉션 모두 무공변 타입이지만 원본 컬렉션에서는 읽기만 하고 대상 컬렉션에서는 쓰기만 한다. 이 경우 두 컬렉션의 원소 타입이 정확하게 일치할 필요가 없다.
+
+ 이 함수가 여러 다른 리스트 타입에 대해 작동하게 만들려면 두 번째 제네릭 타입 파라미터를 도입할 수 있다.
+ ```kotlin
+ fun <T: R, R> copyData(source: MutableList<T>, // source 원소 타입은 destination 원소 타입의 하위 타입이어야 한다.
+                       destination: MutableList<R>) {
+  for(item in source) {
+    destination.add(item)
+  }
+ }
+ >>> val ints = mutableListOf(1, 2, 3)
+ >>> val anyItems = mutableListOf<Any>()
+ >>> copyData(ints, anyItems) // Int가 Any의 하위 타입이므로 이 함수를 호출할 수 있다.
+ >>> println(anyItems) // [1, 2, 3]
+ ```
+ 한 리스트에서 다른 리스트로 원소를 복사할 수 있으려면 원본 리스트 원소 타입은 대상 리스트 원소 타입의 하위 타입이어야 한다.
+
+ 하지만 코틀린에는 이를 더 우아하게 표현할 수 있는 방법이 있다. **함수 구현이 아웃 위치(또는 인 위치)에 있는 타입 파라미터를 사용하는 메서드만 호출한다면 그런 정보를 바탕으로 함수 정의 시 타입 파라미터에 변성 변경자를 추가할 수 있다.**
+ ```kotlin
+ // out 프로젝션 타입 파라미터를 사용하는 데이터 복사 함수
+ fun <T> copyData(source: MutableList<out T, // "out" 키워드를 타입을 사용하는 위치 앞에 붙이면 T 타입을 "in" 위치에 사용하는 메서드를 호출하지 않는다는 뜻이다.
+                    destination: MutableList<T>) {
+    for(item in source) {
+      destination.add(item)
+    }
+ }
+ ```
+ **타입 선언에서 타입 파라미터를 사용하는 위치라면 어디에나 변성 변경자를 붙일 수 있다. 따라서 파라미터 타입, 로컬 변수 타입, 함수 반환 타입 등에 타입 파라미터가 쓰이는 경우 in이나 out 변경자를 붙일 수 있다. 이때 타입 프로젝션이 일어난다.** 즉 source를 일반적인 MutableList가 아니라 MutableList를 프로젝션을 한(제약을 가한) 타입으로 만든다. 이 경우 copyData 함수는 MutableList의 메서드 중에서 반환 타입으로 타입 파라미터 T를 사용하는 메서드만 호출할 수 있다(타입 파라미터 T를 아웃 위치에서 사용하는 메서드만 호출할 수 있다).
+ ```kotlin
+ // in 프로젝션 타입 파라미터를 사용하는 데이터 복사 함수
+ fun <T> copyData(source: MutableList<T>,
+                destination: MutableList<in T>) { // 원본 리스트 원소 타입의 상위 타입을 대상 리스트 원소 타입으로 허용한다.
+    for(item in source) {
+      destination.add(item)
+    }
+ }
+ ```
+ 사용 지점 변성을 사용하면 타입 인자로 사용할 수 있는 타입의 범위가 넓어진다.
+
+ ### 스타 프로젝션: 타입 인자 대신 * 사용
+ * MutableList<Any?>는 모든 타입의 원소를 담을 수 있다.
+ * MutableList<\*>는 어떤 정해진 구체적인(한) 타입의 원소만을 담는 리스트지만 그 원소의 타입을 정확히 모른다는 사실을 표현한다(타입이 MutableList<\*>인 리스트는 만들 수는 없다). 리스트의 원소 타입이 어떤 타입인지 모른다고 해서 그 안에 아무 원소나 다 담아도 된다는 뜻은 아니다. 그 리스트에 담는 값의 타입에 따라서는 리스트를 만들어서 넘겨준 쪽이 바라는 조건을 깰 수도 있기 때문이다. 하지만 MutableList<\*> 타입의 리스트에서 원소를 얻을 수는 있다. 그런 경우 진짜 원소 타입은 알 수 없지만 어쨌든 그 원소 타입이 Any?의 하위 타입이라는 사실은 분명하다. Any?는 코틀린에서 모든 타입의 상위 타입이기 때문이다.
+ ```kotlin
+ >>> val list: MutableList<Any?> = mutableListOf('a', 1, "qwe")
+ >>> val chars = mutableListOf('a', 'b', 'c')
+ >>> val unknownElements: MutableList<*> = // MutableList<*>는 MutableList<Any?>와 같지 않다.
+ ... if(Random().nextBoolean()) list else chars
+ >>> unknownElements.add(42) // 컴파일러는 이 메서드 호출을 금지한다.
+ Error: Out-projected type 'MutableList<*>' prohibits the use of 'fun add(element: E): Boolean'
+ >>> println(unknownElements.first()) / a // 원소를 가져와도 안전하다. first()는 Any? 타입의 원소를 반환한다.
+ ```
+ **컴파일러는 MutableList<\*>를 아웃 프로젝션 타입으로 인식한다. MutableList<\*>는 MutableList<out Any?>처럼 동작한다. 어떤 리스트의 원소 타입을 모르더라도 그 리스트에서 안전하게 Any? 타입의 원소를 꺼내올 수는 있지만 타입을 모르는 리스트에 원소를 마음대로 넣을 수는 없다.**
+
+ 타입 파라미터를 시그니처에서 전혀 언급하지 않거나 데이터를 읽기는 하지만 그 타입에는 관심이 없는 경우와 같이 타입 인자 정보가 중요하지 않을 때도 스타 프로젝션 구문을 사용할 수 있다.
+ ```kotlin
+ fun printFirst(list: List<*>) { // 모든 리스트를 인자로 받을 수 있다.
+  if(list.isNotEmpty()) { // isNotEmpty()에서는 제네릭 타입 파라미터를 사용하지 않는다.
+    println(list.first()) // first()는 이제 Any?를 반환하지만 여기서는 그 타입만으로 충분하다.
+  }
+ }
+ >>> printFirst(listOf("Svetlana", "Dmitry")) // Svetlana
+ ```
+
+ 사용 지점 변성과 마찬가지로 이런 스타 프로젝션도 우회하는 방법이 있는데, 제네릭 타입 파라미터를 도입하면 된다.
+ ```kotlin
+ fun <T> printFirst(list: List<T>) { // 이 경우에도 모든 리스트를 인자로 받을 수 있다.
+  if(list.isNotEmpty()) {
+    println(list.first()) // 이제 first()는 T 타입의 값을 반환한다.
+  }
+ }
+ ```
+
+ 다음은 스타 프로젝션을 쓰는 방법과 스타 프로젝션 사용 시 빠지기 쉬운 함정을 보여주는 예제이다.
