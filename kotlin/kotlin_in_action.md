@@ -4470,3 +4470,58 @@ if(value is String) // 타입을 검사한다.
  ```
 
  다음은 스타 프로젝션을 쓰는 방법과 스타 프로젝션 사용 시 빠지기 쉬운 함정을 보여주는 예제이다.
+ ```kotlin
+ interface FieldValidator<in T> {
+  fun validate(input: T): Boolean
+ }
+
+ object DefaultStringValidator : FieldValidator<String> {
+  override fun validate(input: String) = input.isNotEmpty()
+ }
+
+ object DefaultIntValidator : FieldValidator<Int> {
+  override fun validate(input: Int) = input >= 0
+ }
+ ```
+ KClass는 코틀린 클래스를 표현한다.
+
+ String 타입의 필드를 FieldValidator<\*> 타입의 검증기로 검증할 수 없다. 컴파일러는 FieldValidator<\*>가 어떤 타입을 검증하는 검증기인지 모르기 때문에 String을 검증하기 위해 그 검증기를 사용하면 안전하지 않다고 판단한다.
+ ```kotlin
+ >>> val validators = mutableMapOf<KClass<*>, FieldValidator<*>>()
+ >>> validators[String::class] = DefaultStringValidator
+ >>> validators[Int::class] = DefaultIntValidator
+
+ >>> validators[String::class]!!.validate("") // 맵에 저장된 값의 타입은 FieldValidator<*>
+ Error: Out-projected type 'FieldValidator<*>' prohibits the use of 'fun validate(input: T): Boolean'
+ ```
+
+ 검증기에 원하는 타입으로 캐스팅하면 이런 문제를 고칠 수 있다. 하지만 그런 타입 캐스팅은 안전하지 못하고 권장할 수 없다.
+ ```kotlin
+ >>> val stringValidator = validators[String::class] // Warning: unchecked cast(경고: 안전하지 않은 캐스팅)
+                            as FieldValidator<String>
+ >>> println(stringValidator.validate("")) // false
+ ```
+ 이 코드를 실행하면 타입 캐스팅 부분에서 실패하지 않고 값을 검증하는 메서드 안에서 실패한다. 실행 시점에 모든 제네릭 타입 정보는 사라지므로 타입 캐스팅은 문제가 없고 검증 메서드 안에서 값(객체)의 메서드나 프로퍼티를 사용할 때 문제가 생긴다. 이런 해법은 타입 안전성을 보장할 수도 없고 실수를 하기도 쉽다.
+
+ 다음 예제는 검증기를 등록하거나 가져오는 작업을 수행할 때 타입을 제대로 검사하게 캡슐화한다. 이 코드도 앞의 예제와 마찬가지로 안전하지 않은 캐스팅 오류를 컴파일 시 발생시키지만 Validators 객체가 맵에 대한 접근을 통제하기 때문에 맵에 잘못된 값이 들어가지 못하게 막을 수 있다.
+ ```kotlin
+ // 검증기 컬렉션에 대한 접근 캡슐화하기
+ object Validators {
+  private val validators = // 앞 예제와 같은 맵을 사용하지만 외부에서 이 맵에 접근할 수 없다.
+        mutableMapOf<KClass<*>, FieldValidator<*>>()
+
+  fun <T: Any> registerValidator(
+    kClass: KClass<T>, fieldValidator: FieldValidator<T>) {
+      validators[kClass] = fieldValidator // 어떤 클래스와 검증기가 타입이 맞아 떨어지는 경우에만 그 클래스와 검증기 정보를 맵에 키/값 쌍으로 넣는다.
+  }
+
+  @Suppress("UNCHECKED_CAST") // FieldValidator<T> 캐스팅이 안전하지 않다는 경고를 무시하게 만든다.
+  operator fun <T: Any> get(kClass: KClass<T>): FieldValidator<T> = 
+      validators[kClass] as? FieldValidator<T>
+        ?: throw IllegalArgumentException("No validator for ${kClass.simpleName}")
+ }
+ >>> Validators.registerValidator(String::class, DefaultStringValidator)
+ >>> Validators.registerValidator(Int::class, DefaultIntValidator)
+ >>> println(Validators[String::class].validate("Kotlin")) // true
+ >>> println(Validators[Int::class].validate(42)) // true
+ ```
