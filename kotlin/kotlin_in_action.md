@@ -180,6 +180,15 @@
           4. [반공변성: 뒤집힌 하위 타입 관계](#반공변성-뒤집힌-하위-타입-관계)
           5. [사용 지점 변성: 타입이 언급되는 지점에서 변성 지정](#사용-지점-변성-타입이-언급되는-지점에서-변성-지정)
           6. [스타 프로젝션: 타입 인자 대신 * 사용](#스타-프로젝션-타입-인자-대신--사용)
+  10. [애노테이션과 리플렉션](#10장-애노테이션과-리플렉션)
+      1. [애노테이션 선언과 적용](#1-애노테이션-선언과-적용)
+          1. [애노테이션 적용](#애노테이션-적용)
+          2. [애노테이션 대상](#애노테이션-대상)
+          3. [애노테이션을 활용한 JSON 직렬화 제어](#애노테이션을-활용한-json-직렬화-제어)
+          4. [애노테이션 선언](#애노테이션-선언)
+          5. [메타애노테이션: 애노테이션을 처리하는 방법 제어](#메타애노테이션-애노테이션을-처리하는-방법-제어)
+          6. [애노테이션 파라미터로 클래스 사용](#애노테이션-파라미터로-클래스-사용)
+          7. [애노테이션 파라미터로 제네릭 클래스 받기](#애노테이션-파라미터로-제네릭-클래스-받기)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -4525,3 +4534,234 @@ if(value is String) // 타입을 검사한다.
  >>> println(Validators[String::class].validate("Kotlin")) // true
  >>> println(Validators[Int::class].validate(42)) // true
  ```
+
+# 10장 애노테이션과 리플렉션
+ 
+ ## 1. 애노테이션 선언과 적용
+ 
+ ### 애노테이션 적용
+ 코틀린에서는 자바와 같은 방법으로 애노테이션을 사용할 수 있다.
+ * 애노테이션을 적용하려면 적용하려는 대상 앞에 애노테이션을 붙이면 된다.
+ * 애노테이션은 @과 애노테이션 이름으로 이뤄진다.
+ * 함수나 클래스등 여러 다른 코드 구성 요소에 애노테이션을 붙일 수 있다.
+ ```kotlin
+ import org.junit.*
+
+ class MyTest {
+  @Test fun testTrue() { // @Test 애노테이션을 사용해 제이유닛 프레임워크에게 이 메서드를 테스트로 호출하라고 지시한다.
+      Assert.assertTrue(true)
+  }
+ }
+ ```
+
+ 자바와 코틀린에서 @Deprecated의 의미는 똑같다. 하지만 코틀린에서는 replaceWith 파라미터를 통해 옛 버전을 대신할 수 있는 패턴을 제시할 수 있고, API 사용자는 그 패턴을 보고 지원이 종료될 API 기능을 더 쉽게 새 버전으로 포팅할 수 있다.
+ ```kotlin
+ @Deprecated("Use removeAt(index) instead.", ReplaceWith("removeAt(index)"))
+ fun remove(index: Int) { ... }
+ ```
+ * 애노테이션에 인자를 넘길 때는 일반 함수와 마찬가지로 괄호 안에 인자를 넣는다.
+ * 이런 remove 함수 선언이 있다면 인텔리J 아이디어는 remove를 호출하는 코드에 대해 경고 메세지를 표시해 줄 뿐 아니라 자동으로 그 코드를 새로운 API 버전에 맞는 코드로 바꿔주는 퀵 픽스도 제시해준다.
+ * 애노테이션의 인자로는 원시 타입의 값, 문자열, enum, 클래스 참조, 다른 애노테이션 클래스, 그리고 지금까지 말한 요소들로 이뤄진 배열이 들어갈 수 있다.
+
+ #### 애노테이션 인자를 지정하는 문법(자바와 약간 다르다).
+ * 클래스를 애노테이션 인자로 지정할 때는 @MyAnnotation(MyClass::class)처럼 ::class를 클래스 이름 뒤에 넣어야 한다.
+ * 다른 애노테이션을 인자로 지정할 때는 인자로 들어가는 애노테이션의 이름 앞에 @를 넣지 않아야 한다. 예를 들어 방금 살펴본 예제의 ReplaceWith는 애노테이션이다. 하지만 Deprecated 애노테이션의 인자로 들어가므로 ReplaceWith 앞에 @를 사용하지 않는다.
+ * 배열을 인자로 지정하려면 @RequestMapping(path=arrayOf("/foo", "/bar"))처럼 arrayOf 함수를 사용한다. 자바에서 선언한 애노테이션 클래스를 사용한다면 value라는 이름의 파라미터가 필요에 따라 자동으로 가변 길이 인자로 변환된다. 따라서 그런 경우에는 @JavaAnnotationWithArrayValue("abc", "foo", "bar")처럼 arrayOf 함수를 쓰지 않아도 된다.
+
+ 애노테이션 인자를 컴파일 시점에 알 수 있어야 한다. **따라서 프로퍼티를 애노테이션 인자로 사용하려면 그 앞에 `const` 변경자를 붙여야 한다.** 컴파일러는 const가 붙은 프로퍼티를 컴파일 시점 상수로 취급한다.
+ ```kotlin
+ const val TEST_TIMEOUT = 100L
+
+ @Test(timeout = TEST_TIMEOUT) fun testMethod() { ... }
+ ```
+ const가 붙은 프로퍼티는 파일의 맨 위나 object 안에 선언해야 하며, 원시 타입이나 String으로 초기화해야만 한다.
+
+ ### 애노테이션 대상
+ 코틀린 소스코드에서 한 선언을 컴파일한 결과가 여러 자바 선언과 대응하는 경우가 자주 있다. 그리고 이때 코틀린 선언과 대응하는 여러 자바 선언에 각각 애노테이션을 붙여야 할 때가 있다.
+
+ ex) 코틀린 프로퍼티는 기본적으로 자바 필드와 게터 메서드 선언과 대응한다. 프로퍼티가 변경 가능하면 세터에 대응하는 자바 세터 메서드와 세터 파라미터가 추가된다. 게다가 주 생성자에서 프로퍼티를 선언하면 이런 접근자 메서드와 파라미터 외에 자바 생성자 파라미터와도 대응이 된다. **따라서 애노테이션을 붙일 때 이런 요소 중 어떤 요소에 애노테이션을 붙일지 표시할 필요가 있다.**
+
+ **사용 지점 대상** 선언으로 애노테이션을 붙일 요소를 정할 수 있다. 사용 지점 대상은 @ 기호와 애노테이션 이름 사이에 붙으며, 애노테이션 이름과는 콜론(:)으로 분리된다.
+ ```kotlin
+ @get : Rule
+ >>> get : 사용 지점 대상
+ >>> Rule : 애노테이션 이름
+ ```
+
+ 규칙을 지정하려면 공개(public) 필드나 메서드 앞에 @Rule을 붙여야 한다. 하지만 코틀린 테스트 클래스의 folder라는 프로퍼티 앞에 @Rule을 붙이면 "The @Rule 'folder' must be public" 라는 제이유닛 예외가 발생한다. @Rule은 필드에 적용되지만 코틀린의 필드는 기본적으로 비공개이기 때문에 이런 예외가 생긴다. @Rule 애노테이션을 정확한 대상에 적용하려면 다음과 같이 @get:Rule을 사용해야 한다.
+ ```kotlin
+ class HasTempFolder {
+  @get:Rule // 프로퍼티가 아니라 게터에 애노테이션이 붙는다.
+  val folder = TemporaryFolder()
+  @Test
+  fun testUsingTempFolder() {
+    val createdFile = folder.newFile("myfile.txt")
+    val createdFolder = folder.newFolder("subfolder")
+  }
+ }
+ ```
+
+ 자바에 선언된 애노테이션을 사용해 프로퍼티에 애노테이션을 붙이는 경우 기본적으로 프로퍼티의 필드에 그 애노테이션이 붙는다. 하지만 코틀린으로 애노테이션을 선언하면 프로퍼티에 직접 적용할 수 있는 애노테이션을 만들 수 있다.
+
+ 사용 지점 대상을 지정할 때 지원하는 대상 목록은 다음과 같다.
+ * property : 프로퍼티 전체, 자바에서 선언된 애노테이션에는 이 사용 지점 대상을 사용할 수 없다.
+ * field : 프로퍼티에 의해 생성되는 (뒷받침하는) 필드
+ * get : 프로퍼티 게터
+ * set : 프로퍼티 세터
+ * receiver : 확장 함수나 프로퍼티의 수신 객체 파라미터
+ * param : 생성자 파라미터
+ * setparam : 세터 파라미터
+ * delegate : 위임 프로퍼티의 위임 인스턴스를 담아둔 필드
+ * file : 파일 안에 선언된 최상위 함수와 프로퍼티를 담아두는 클래스
+
+ file 대상을 사용하는 애노테이션은 package 선언 앞에서 파일의 최상위 수준에만 적용할 수 있다. 파일에 흔히 적용하는 애노테이션으로는 파일에 있는 최상위 선언을 담는 클래스의 이름을 바꿔주는 @JvmName이 있다.
+
+ 자바와 달리 코틀린에서는 애노테이션 인자로 클래스나 함수 선언이나 타입 외에 임의의 식을 허용한다. 다음 예는 안전하지 못한 캐스팅 경고를 무시하는 로컬 변수 선언이다.
+ ```kotlin
+ fun test(list: List<*>) {
+  @Suppress("UNCHECKED_CAST")
+  val strings = list as List<String>
+ }
+ ```
+
+ ### 애노테이션을 활용한 JSON 직렬화 제어
+ * **직렬화**는 객체를 저장장치에 저장하거나 네트워크를 통해 전송하기 위해 텍스트나 이진 형식으로 변환하는 것이다.
+ * **역직렬화**는 텍스트나 이진 형식으로 저장된 데이터로부터 원래의 객체를 만들어낸다.
+ 
+ 직렬화에 자주 쓰이는 형식에 JSON이 있다. 자바와 JSON을 변환할 때 자주 쓰이는 라이브러리로는 잭슨(Jackson)과 지슨(GSON)이 있다. 다른 자바 라이브러리처럼 이들도 코틀린과 완전히 호환된다.
+
+ 지금부터 JSON 직렬화를 위한 **제이키드라는 순수 코틀린 라이브러리**를 구현하는 과정을 알아본다.
+
+ 라이브러리를 테스트할 수 있는 가장 간단한 예제
+ ```kotlin
+ data class Person(val name: String, val age: Int)
+ >>> val person = Person("Alice", 29)
+ >>> println(serialize(person)) // {"age": 29, "name": "Alice"}
+ ```
+ 예제에서 객체 인스턴스의 JSON 표현은 키/값 쌍으로 이뤄진 객체를 표현한다.
+
+ JSON 표현을 다시 객체로 만드는 예제
+ ```kotlin
+ >>> val json = """{"name": "Alice", "age": 29}"""
+ >>> println(deserialize<Person>(json)) // Person(name=Alice, age=29)
+ ```
+ **JSON에는 객체의 타입이 저장되지 않기 때문에 JSON 데이터로부터 인스턴스를 만들려면 타입 인자로 클래스를 명시해야 한다(여기서는 Person 클래스).**
+
+ 애노테이션을 활용해 객체를 직렬화하거나 역직렬화하는 방법을 제어할 수 있다.
+ * 객체를 JSON으로 직렬화할 때 제이키드 라이브러리는 기본적으로 모든 프로퍼티를 직렬화 하며 프로퍼티 이름을 키로 사용한다.
+ 
+ 애노테이션을 사용하면 이런 동작을 변경할 수 있다. 이번 절에서는 @JsonExclude와 @JsonName이라는 두 애노테이션을 다룬다.
+ * @JsonExclude 애노테이션을 사용하면 직렬화나 역직렬화 시 그 프로퍼티를 무시할 수 있다.
+ * @JsonName 애노테이션을 사용하면 프로퍼티를 표현하는 키/값 쌍의 키로 프로퍼티 이름 대신 애노테이션이 지정한 이름을 쓰게 할 수 있다.
+
+ ```kotlin
+ data class Person(
+  @JsonName("alias") val firstName: String,
+  @JsonExclude val age: Int? = null
+ )
+ ```
+ 직렬화 대상에서 제외할 age 프로퍼티에는 반드시 디폴트 값을 지정해야만 한다. 디폴트 값을 지정하지 않으면 역직렬화 시 Person의 인스턴스를 새로 만들 수 없다.
+
+ ### 애노테이션 선언
+ 제이키드의 애노테이션을 예제로 애노테이션을 선언하는 방법을 살펴본다.
+ ```kotlin
+ annotation class JsonExclude // 아무 파라미터도 없는 가장 단순한 애노테이션
+ ```
+ * 일반 클래스 선언처럼 보이지만 class 키워드 앞에 annotation이라는 변경자가 붙어있다.
+ * 애노테이션 클래스는 오직 선언이나 식과 관련 있는 메타데이터의 구조를 정의하기 때문에 내부에 아무 코드도 들어있을 수 없다. 그런 이유로 컴파일러는 애노테이션 클래스에서 본문을 정의하지 못하게 막는다.
+
+ **파라미터가 있는 애노테이션을 정의**하려면 애노테이션 클래스의 주 생성자에 파라미터를 선언해야 한다.
+ ```kotlin
+ annotation class JsonName(val name: String)
+ ```
+ 애노테이션 클래스에서는 모든 파라미터 앞에 val을 붙여야만 한다.
+
+ 이를 자바 애노테이션 선언과 비교
+ ```java
+ /* 자바 */
+ public @interface JsonName {
+  String value();
+ }
+ ```
+ 코틀린 애노테이션에서는 name이라는 프로퍼티를 사용했지만 자바 애노테이션에서는 **value라는 메서드**를 썼다. 자바에서 value 메서드는 특별하다. 어떤 애노테이션을 적용할 때 value를 제외한 모든 애트리뷰트에는 이름을 명시해야 한다. 반면 코틀린의 애노테이션 적용 문법은 일반적인 생성자 호출과 같다. 따라서 인자의 이름을 명시하기 위해 이름 붙인 인자 구문을 사용할 수도 있고 이름을 생략할 수도 있다. 여기서는 name이 JsonName 생성자의 첫 번째 인자이므로 @JsonName(name = "first_name")은 @JsonName("first_name")과 같다. 자바에서 선언한 애노테이션을 코틀린의 구성 요소에 적용할 때는 value를 제외한 모든 인자에 대해 이름 붙인 인자 구문을 사용해야만 한다. 코틀린도 자바 애노테이션에 정의된 value를 특별하게 취급한다.
+
+ ### 메타애노테이션: 애노테이션을 처리하는 방법 제어
+ 자바와 마찬가지로 코틀린 애노테이션 클래스에도 애노테이션을 붙일 수 있다. 애노테이션 클래스에 적용할 수 있는 애노테이션을 **메타애노테이션**이라고 부른다.
+
+ 표준 라이브러리에는 몇 가지 메타애노테이션이 있으며, 그런 메타애노테이션들은 컴파일러가 애노테이션을 처리하는 방법을 제어한다. 프레임워크 중에도 메타애노테이션을 제공하는 것이 있다. 예를 들어 여러 의존관계 주입 라이브러리들이 메타애노테이션을 사용해 주입 가능한 타입이 동일한 여러 객체를 식별한다.
+
+ 표준 라이브러리에 있는 메타 애노테이션 중 가장 흔히 쓰이는 메타애노테이션은 @Target이다. 제이키드의 JsonExclude와 JsonName 애노테이션도 적용 가능 대상을 지정하기 위해 @Target을 사용한다.
+ ```kotlin
+ @Target(AnnotationTarget.PROPERTY)
+ annotation class JsonExclude
+ ```
+ @Target 메타애노테이션은 애노테이션을 적용할 수 있는 요소의 유형을 지정한다. 애노테이션 클래스에 대해 구체적인 @Target을 지정하지 않으면 모든 선언에 적용할 수 있는 애노테이션이 된다. 하지만 제이키드 라이브러리는 프로퍼티 애노테이션만을 사용하므로 애노테이션 클래스에 @Target을 꼭 지정해야 한다.
+
+ 애노테이션이 붙을 수 있는 대상이 정의된 이넘(enum)은 AnnotationTarget이다. 그 안에는 클래스, 파일, 프로퍼티, 접근자, 타입, 식 등에 대한 이넘 정의가 들어있다. 필요하다면 @Target(AnnotationTarget.CLASS, AnnotationTarget.METHOD)처럼 둘 이상의 대상을 한꺼번에 선언할 수도 있다.
+
+ 메타애노테이션을 직접 만들어야 한다면 ANNOTATION_CLASS를 대상으로 지정하면 된다.
+ ```kotlin
+ @Target(AnnotationTarget.ANNOTATION_CLASS)
+ annotation class BindingAnnotation
+
+ @BindingAnnotation
+ annotation class MyBinding
+ ```
+ 대상을 PROPERTY로 지정한 애노테이션을 자바 코드에서 사용할 수는 없다. 자바에서 그런 애노테이션을 사용하려면 AnnotationTarget.FIELD를 두 번째 대상으로 추가해야 한다. 그렇게 하면 애노테이션을 코틀린 프로퍼티와 자바 필드에 적용할 수 있다.
+
+ ### 애노테이션 파라미터로 클래스 사용
+ 어떤 클래스를 선언 메타데이터로 참조할 수 있는 기능이 필요할 때가 있다. 클래스 참조를 파라미터로 하는 애노테이션 클래스를 선언하면 그런 기능을 사용할 수 있다.
+ ```kotlin
+ interface Company {
+  val name: String
+ }
+
+ data class CompanyImpl(override val name: String) : Company
+
+ data class Person(
+  val name: String,
+  @DeserializeInterface(CompanyImpl::class) val company: Company
+ )
+ ```
+ 직렬화된 Person 인스턴스를 역직렬화 하는 과정에서 company 프로퍼티를 표현하는 JSON을 읽으면 제이키드는 그 프로퍼티 값에 해당하는 JSON을 역직렬화하면서 CompanyImpl의 인스턴스를 만들어서 Person 인스턴스의 company 프로퍼티에 설정한다. 이렇게 역직렬화를 사용할 클래스를 지정하기 위해 @DeserializeInterface 애노테이션의 인자로 CompanyImpl::class를 넘긴다. 일반적으로 클래스를 가리키려면 클래스 이름 뒤에 ::class 키워드를 붙여야 한다.
+
+ @DeserializeInterface(CompanyImpl::class) 처럼 **클래스 참조를 인자로 받는 애노테이션을 정의하는 방법**
+ ```kotlin
+ annotation class DeserializeInterface(val targetClass: KClass<out Any>)
+ ```
+ **KClass는 자바 java.lang.Class 타입과 같은 역할을 하는 코틀린 타입이다.** 코틀린 클래스에 대한 참조를 저장할 때 KClass 타입을 사용한다.
+
+ KClass의 타입 파라미터는 이 KClass의 인스턴스가 가리키는 코틀린 타입을 지정한다. 예를 들어 CompanyImpl::class 타입은 KClass\<CompanyImpl>이며, 이 타입은 방금 살펴본 DeserializeInterface의 파라미터 타입인 KClass\<out Any>의 하위 타입이다.
+
+ KClass의 타입 파라미터를 쓸 때 out 변경자 없이 KClass\<Any>라고 쓰면 DeserializeInterface에게 CompanyImpl::class를 인자로 넘길 수 없고 오직 Any::class만 넘길 수 있다. 반면 out 키워드가 있으면 모든 코틀린 타입 T에 대해 KClass\<T>가 KClass\<out Any>의 하위 타입이 된다(공변성).
+
+ ### 애노테이션 파라미터로 제네릭 클래스 받기
+ 기본적으로 제이키드는 원시 타입이 아닌 프로퍼티를 중첩된 객체로 직렬화한다. 이런 기본 동작을 변경하고 싶으면 값을 직렬화하는 로직을 직접 제공하면 된다.
+
+ @CustomSerializer 애노테이션은 커스텀 직렬화 클래스에 대한 참조를 인자로 받는다. 이 직렬화 클래스는 ValueSerializer 인터페이스를 구현해야만 한다.
+ ```kotlin
+ interface ValueSerializer<T> {
+  fun toJsonValue(value: T): Any?
+  fun fromJsonValue(jsonValue: Any?): T
+ }
+ ```
+
+ 날짜를 직렬화한다고 했을 때 ValueSerializer\<Date>를 구현하는 DateSerializer를 사용하는 예제이다. 이 예제는 직렬화 로직을 Person 클래스에 적용하는 방법을 보여준다.
+ ```kotlin
+ data class Person(
+  val name: String,
+  @CustomSerializer(DateSerializer::class) val birthDate: Date
+ )
+ ```
+
+ @CustomSerializer 애노테이션을 구현하는 방법이다. ValueSerializer 클래스는 제네릭 클래스라서 타입 파라미터가 있다. 따라서 ValueSerializer 타입을 참조하려면 항상 타입 인자를 제공해야 한다. 하지만 이 애노테이션이 어떤 타입에 대해 쓰일지 전혀 알 수 없으므로 여기서는 스타 프로젝션을 사용할 수 있다.
+ ```kotlin
+ annotation class CustomSerializer (
+  val serializerClass: KClass<out ValueSerializer<*>>
+ )
+ ```
+
+ ![](../assets/kotlin-annotation.png)
+
+ * 클래스를 인자로 받아야 한다면 애노테이션 파라미터 타입에 KClass\<out 허용할 클래스 이름>을 쓴다.
+ * 제네릭 클래스를 인자로 받아야 한다면 KClass\<out 허용할 클래스 이름<*>>처럼 허용할 클래스의 이름 뒤에 스타 프로젝션을 덧붙인다.
