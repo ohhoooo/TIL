@@ -189,6 +189,8 @@
           5. [메타애노테이션: 애노테이션을 처리하는 방법 제어](#메타애노테이션-애노테이션을-처리하는-방법-제어)
           6. [애노테이션 파라미터로 클래스 사용](#애노테이션-파라미터로-클래스-사용)
           7. [애노테이션 파라미터로 제네릭 클래스 받기](#애노테이션-파라미터로-제네릭-클래스-받기)
+      2. [리플렉션: 실행 시점에 코틀린 객체 내부 관찰](#2-리플렉션-실행-시점에-코틀린-객체-내부-관찰)
+          1. [코틀린 리플렉션 API: KClass, KCallable, KFunction, KProperty](#코틀린-리플렉션-api-kclass-kcallable-kfunction-kproperty)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -4765,3 +4767,56 @@ if(value is String) // 타입을 검사한다.
 
  * 클래스를 인자로 받아야 한다면 애노테이션 파라미터 타입에 KClass\<out 허용할 클래스 이름>을 쓴다.
  * 제네릭 클래스를 인자로 받아야 한다면 KClass\<out 허용할 클래스 이름<*>>처럼 허용할 클래스의 이름 뒤에 스타 프로젝션을 덧붙인다.
+
+ ## 2. 리플렉션: 실행 시점에 코틀린 객체 내부 관찰
+ 리플렉션은 실행 시점에 (동적으로) 객체의 프로퍼티와 메서드에 접근할 수 있게 해주는 방법이다.
+
+ 보통 객체의 메서드나 프로퍼티에 접근할 때는 프로그램 소스코드 안에 구체적인 선언이 있는 메서드나 프로퍼티 이름을 사용하며, 컴파일러는 그런 이름이 실제로 가리키는 선언을 컴파일 시점에 (정적으로) 찾아내서 해당하는 선언이 실제 존재함을 보장한다.
+
+ 하지만 타입과 관계없이 객체를 다뤄야 하거나 객체가 제공하는 메서드나 프로퍼티 이름을 오직 실행 시점에만 알 수 있는 경우가 있다. JSON 직렬화 라이브러리가 그런 경우다. 직렬화 라이브러리는 어떤 객체든 JSON으로 변환할 수 있어야 하고, 실행 시점이 되기 전까지는 라이브러리가 직렬화할 프로퍼티나 클래스에 대한 정보를 알 수 없다. 이런 경우 리플렉션을 사용해야 한다.
+
+ 코틀린에서 리플렉션을 사용하려면 두 가지 서로 다른 리플렉션 API를 다뤄야 한다.
+ 1. 자바가 java.lang.reflect 패키지를 통해 제공하는 표준 리플렉션
+ 2. 코틀린이 kotlin.reflect 패키지를 통해 제공하는 코틀린 리플렉션
+
+ 코틀린의 reflect은 자바에는 없는 프로퍼티나 널이 될 수 있는 타입과 같은 코틀린 고유 개념에 대한 리플렉션을 제공한다. 하지만 현재 코틀린 리플렉션 API는 자바 리플렉션 API를 완전히 대체할 수 있는 복잡한 기능을 제공하지는 않는다. 따라서 자바 리플렉션을 대안으로 사용해야 하는 경우가 생긴다. 또한 코틀린 리플렉션 API가 코틀린 클래스만 다룰 수 있는 것은 아니다. 다른 JVM 언어에서 생성한 바이트코드를 충분히 다룰 수 있다.
+
+ ### 코틀린 리플렉션 API: KClass, KCallable, KFunction, KProperty
+ java.lang.Class에 해당하는 **KClass를 사용하면 클래스 안에 있는 모든 선언을 열거하고 각 선언에 접근하거나 클래스의 상위 클래스를 얻는 등의 작업이 가능하다.**
+ * MyClass::class라는 식을 쓰면 KClass의 인스턴스를 얻을 수 있다.
+ * 실행 시점에 객체의 클래스를 얻으려면 먼저 객체의 `javaClass 프로퍼티`를 사용해 객체의 자바 클래스를 얻어야 한다. javaClass는 자바의 java.lang.Object.getClass()와 같다. 일단 자바 클래스를 얻었으면 `.kotlin 확장 프로퍼티`를 통해서 자바에서 코틀린 리플렉션 API로 옮겨올 수 있다.
+ ```kotlin
+ class Person(val name: String, val age: Int)
+
+ >>> import kotlin.reflect.full.* // memberProperties 확장 함수 임포트
+ >>> val person = Person("Alice", 29)
+ >>> val KClass = person.javaClass.kotlin // KClass<Person>의 인스턴스를 반환한다.
+ >>> println(kClass.simpleName) // Person
+ >>> kClass.memberProperties.forEach { println(it.name) }
+ age
+ name
+ ```
+ ```kotlin
+ interface KClass<T : Any> {
+  val simpleName: String?
+  val qualifiedName: String?
+  val members: Collection<KCallable<*>>
+  val constructors: Collection<KFunction<T>>
+  val nestedClassed: Collection<KClass<*>>
+  ...
+ }
+ ```
+ memberProperties를 비롯해 KClass에 대해 사용할 수 있는 다양한 기능은 실제로는 kotlin-reflect 라이브러리를 통해 제공하는 확장 함수다. 이런 확장 함수를 사용하려면 import kotlin.reflect.full.*로 확장 함수 선언을 임포트해야 한다.
+
+ 클래스의 모든 멤버의 목록은 KCallable 인스턴스의 컬렉션이다. **KCallable은 함수와 프로퍼티를 아우르는 공통 상위 인터페이스다. 그 안에는 call 메서드가 들어있다. call을 사용하면 함수나 프로퍼티의 게터를 호출할 수 있다.**
+ ```kotlin
+ interface KCallable<out R> {
+  fun call(vararg args: Any?): R
+  ...
+ }
+ ```
+ ```kotlin
+ fun foo(x: Int) = println(x)
+ >>> val kFunction = ::foo
+ >>> kFunction.call(42) // 42
+ ```
