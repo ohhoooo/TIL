@@ -191,6 +191,8 @@
           7. [애노테이션 파라미터로 제네릭 클래스 받기](#애노테이션-파라미터로-제네릭-클래스-받기)
       2. [리플렉션: 실행 시점에 코틀린 객체 내부 관찰](#2-리플렉션-실행-시점에-코틀린-객체-내부-관찰)
           1. [코틀린 리플렉션 API: KClass, KCallable, KFunction, KProperty](#코틀린-리플렉션-api-kclass-kcallable-kfunction-kproperty)
+          2. [리플렉션을 사용한 객체 직렬화 구현](#리플렉션을-사용한-객체-직렬화-구현)
+          3. [애노테이션을 활용한 직렬화 제어](#애노테이션을-활용한-직렬화-제어)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -4790,7 +4792,7 @@ if(value is String) // 타입을 검사한다.
 
  >>> import kotlin.reflect.full.* // memberProperties 확장 함수 임포트
  >>> val person = Person("Alice", 29)
- >>> val KClass = person.javaClass.kotlin // KClass<Person>의 인스턴스를 반환한다.
+ >>> val kClass = person.javaClass.kotlin // KClass<Person>의 인스턴스를 반환한다.
  >>> println(kClass.simpleName) // Person
  >>> kClass.memberProperties.forEach { println(it.name) }
  age
@@ -4819,4 +4821,92 @@ if(value is String) // 타입을 검사한다.
  fun foo(x: Int) = println(x)
  >>> val kFunction = ::foo
  >>> kFunction.call(42) // 42
+ ```
+ call에 넘긴 인자 개수와 원래 함수에 정의된 파라미터 개수가 맞아 떨어져야 한다.
+ 
+ * ::foo 식의 값 타입은 리플렉션 API에 있는 KFunction 클래스의 인스턴스이다.
+ * 위의 예시에서 함수를 호출하기 위해 더 구체적인 메서드를 사용할 수도 있다. ::foo의 타입 KFunction1<Int, Unit>에는 파라미터와 반환 값 타입 정보가 들어있다. 1은 이 함수의 파라미터가 1개라는 의미다. **KFunction1 인터페이스를 통해 함수를 호출하려면 invoke 메서드를 사용해야 한다.** invoke는 정해진 개수의 인자만을 받아들이며(KFunction1은 1개), 인자 타입은 KFunction1 제네릭 인터페이스의 첫 번째 타입 파라미터와 같다. **게다가 KFuunction을 직접 호출할 수도 있다.**
+ ```kotlin
+ import kotlin.reflect.KFunction2
+ 
+ fun sum(x: Int, y: Int) = x + y
+ >>> val kFunction: KFunction2<Int, Int, Int> = ::sum
+ >>> println(kFunction.invoke(1, 2) + kFunction(3, 4)) // 10
+ >>> kFunction(1) // ERROR : No value passed for parameter p2
+ ```
+ kFunction의 invoke 메서드를 호출할 때는 인자 개수나 타입이 맞아 떨어지지 않으면 컴파일이 안 된다. 따라서 KFunction의 인자 타입과 반환 타입을 모두 다 안다면 invoke 메서드를 호출하는 게 낫다. call 메서드는 모든 타입의 함수에 적용할 수 있는 일반적인 메서드지만 타입 안전성을 보장해주지는 않는다.
+
+ KProperty의 call 메서드를 호출할 수도 있다. KProperty의 call은 프로퍼티의 게터를 호출한다. 하지만 프로퍼티 인터페이스는 프로퍼티 값을 얻는 더 좋은 방법으로 get 메서드를 제공한다.
+
+ **get 메서드에 접근하려면 프로퍼티가 선언된 방법에 따라 올바른 인터페이스를 사용해야 한다.**
+ 
+ **최상위 프로퍼티**는 KProperty() 인터페이스의 인스턴스로 표현되며, KProperty() 안에는 인자가 없는 get 메서드가 있다.
+ ```kotlin
+ var counter = 0
+ >>> val kProperty = ::counter
+ >>> kProperty.setter.call(21) // 리플렉션 기능을 통해 세터를 호출하면서 21은 인자로 넘긴다.
+ >>> println(kProperty.get()) // "get"을 호출해 프로퍼티 값을 가져온다.
+ 21
+ ```
+
+ **멤버 프로퍼티**는 KProperty1 인스턴스로 표현된다. 그 안에는 인자가 1개인 get 메서드가 들어있다. 멤버 프로퍼티는 어떤 객체에 속해 있는 프로퍼티이므로 멤버 프로퍼티의 값을 가져오려면 get 메서드에게 프로퍼티를 얻고자 하는 객체 인스턴스를 넘겨야 한다.
+ ```kotlin
+ class Person(val name: String, val age: Int)
+ >>> val person = Person("Alice", 29)
+ >>> val memberProperty = Person::age
+ >>> println(memberProperty.get(person)) // 29
+ ```
+ KProperty1은 제네릭 클래스다. memberProperty 변수는 KProperty<Person, Int> 타입으로, 첫 번째 타입 파라미터는 수신 객체 타입, 두 번째 타입 파라미터는 프로퍼티 타입을 표현한다. 따라서 수신 객체를 넘길 때는 KProperty1의 타입 파라미터와 일치하는 타입의 객체만을 넘길 수 있고 memberProperty.get("Alice")와 같은 호출은 컴파일되지 않는다. **최상위 수준이나 클래스 안에 정의된 프로퍼티만 리플렉션으로 접근할 수 있고 함수의 로컬 변수에는 접근할 수 없다**
+
+ ![](../assets/kotlin-reflection-interface.png)
+
+ * KClass는 클래스와 객체를 표현할 때 쓰인다.
+ * KProperty는 모든 프로퍼티를 표현할 수 있고, 그 하위 클래스인 KMutableProperty는 var로 정의한 변경 가능한 프로퍼티를 표현한다.
+ * KProperty와 KMutableProperty에 선언된 Getter와 Setter 인터페이스로 프로퍼티 접근자를 함수처럼 다룰 수 있다. 따라서 접근자 메서드에 붙어 있는 애노테이션을 알아내려면 Getter와 Setter를 통해야 한다. Getter와 Setter는 모두 KFunction을 확장한다.
+ * 번잡함을 피하기 위해 KProperty()와 같은 구체적인 프로퍼티를 위한 인터페이스는 그림에서 생략했다.
+
+ ### 리플렉션을 사용한 객체 직렬화 구현
+ 제이키드의 직렬화 함수 선언
+ ```kotlin
+ fun serialize(obj: Any): String = buildString { serializeObject(obj) }
+ ```
+ buildString은 StringBuilder를 생성해서 인자로 받은 람다에 넘긴다. 람다 안에서는 StringBuilder 인스턴스를 this로 사용할 수 있다. 이 코드는 람다 본문에서 serializeObject(obj)를 호출해서 obj를 직렬화한 결과를 StringBuilder에 추가한다.
+
+ 아래 함수는 객체의 모든 프로퍼티를 직렬화한다. 원시 타입이나 문자열은 적절히 JSON 수, 불리언, 문자열 값 등으로 변환된다. 컬렉션은 JSON 배열로 직렬화된다. 원시 타입이나 문자열, 컬렉션이 아닌 다른 타입인 프로퍼티는 중첩된 JSON 객체로 직렬화된다. 이런 동작을 애노테이션을 통해 변경할 수 있다.
+ ```kotlin
+ private fun StringBuilder.serializeObject(obj: Any) {
+  val kClass = obj.javaClass.kotlin // 객체의 KClass를 얻는다.
+  val properties = kClass.memberProperties // 클래스의 모든 프로퍼티를 얻는다.
+
+  properties.joinToStringBuilder(
+      this, prefix = "{", postfix = "}") { prop ->
+    serializeString(prop.name) // 프로퍼티 이름을 얻는다.
+    append(": ")
+    serializePropertyValue(prop.get(obj)) // 프로퍼티 값을 얻는다.
+    }
+ }
+ ```
+ 이 예제에서는 어떤 객체의 클래스에 정의된 모든 프로퍼티를 열거하기 때문에 정확히 각 프로퍼티가 어떤 타입인지 알 수 없다. 따라서 prop 변수의 타입은 KProperty1<Any, *>이며, prop.get(obj) 메서드 호출은 Any 타입의 값을 반환한다.
+ * joinToStringBuilder : 프로퍼티를 콤마(,)로 분리해준다.
+ * serializeString : JSON 명세에 따라 특수 문자를 이스케이프해준다.
+ * serializePropertyValue : 어떤 값이 원시 타입, 문자열, 컬렉션, 중첩된 객체 중 어떤 것인지 판단하고 그에 따라 값을 적절히 직렬화한다.
+
+ ### 애노테이션을 활용한 직렬화 제어
+ @JsonExclude, @JsonName, @CustomSerializer 애노테이션을 serializeObject 함수가 어떻게 처리할까?
+ 
+ #### @JsonExclude
+ * KAnnotatedElement 인터페이스에는 annotations 프로퍼티가 있다. annotations는 소스코드상에서 해당 요소에 적용된 모든 애노테이션 인스턴스의 컬렉션이다.
+ * KProperty는 KAnnotatedElement를 확장하므로 property.annotations를 통해 프로퍼티의 모든 애노테이션을 얻을 수 있다.
+ 
+ 하지만 여기서는 단지 어떤 한 애노테이션을 찾기만 하면 된다(findAnnotation 함수).
+ ```kotlin
+ inline fun <reified T> KAnnotatedElement.findAnnotation(): T?
+     = annotations.filterIsInstance<T>().firstOrNull()
+ ```
+ findAnnotation 함수는 인자로 전달받은 타입에 해당하는 애노테이션이 있으면 그 애노테이션을 반환한다.
+
+ 아래와 같이 findAnnotation을 표준 라이브러리 함수인 filter와 함께 사용하면 @JsonExclude로 애노테이션된 프로퍼티를 없앨 수 있다.
+ ```kotlin
+ val properties = kClass.memberProperties
+              .filter { it.findAnnotation<JsonExclude>() == null }
  ```
