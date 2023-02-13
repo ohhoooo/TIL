@@ -193,6 +193,7 @@
           1. [코틀린 리플렉션 API: KClass, KCallable, KFunction, KProperty](#코틀린-리플렉션-api-kclass-kcallable-kfunction-kproperty)
           2. [리플렉션을 사용한 객체 직렬화 구현](#리플렉션을-사용한-객체-직렬화-구현)
           3. [애노테이션을 활용한 직렬화 제어](#애노테이션을-활용한-직렬화-제어)
+          4. [JSON 파싱과 객체 역직렬화](#json-파싱과-객체-역직렬화)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -4910,3 +4911,109 @@ if(value is String) // 타입을 검사한다.
  val properties = kClass.memberProperties
               .filter { it.findAnnotation<JsonExclude>() == null }
  ```
+
+ #### @JsonName
+ 애노테이션의 존재 여부뿐 아니라 애노테이션에 전달한 인자도 알아야 한다.
+ ```kotlin
+ val jsonNameAnn = prop.findAnnotation<JsonName>() // @JsonName 애노테이션이 있으면 그 인스턴스를 얻는다.
+ val propName = jsonNameAnn?.name ?: prop.name // 애노테이션에서 "name"인자를 찾고 그런 인자가 없으면 "prop.name"를 사용한다.
+ ```
+
+ #### Person 클래스 인스턴스를 직렬화 하는 과정
+ 다음 코드는 직렬화와 관련된 로직을 serializeProperty라는 확장 함수로 분리해 호출한다.
+ ```kotlin
+ private fun StringBuilder.serializeObject(obj: Any) {
+  obj.javaClass.kotlin.memberProperties
+    .filter { it.findAnnotation<JsonExclude>() == null }
+    .joinToStringBuilder(this, prefix = "{", postfix = "}") {
+      serializeProperty(it, obj)
+    }
+ }
+ ```
+
+ ```kotlin
+ private fun StringBuilder.serializeProperty(
+  prop: KProperty1<Any, *>, obj: Any
+ ) {
+  val jsonNameAnn = prop.findAnnotation<JsonName>()
+  val propName = jsonNameAnn?.name ?: prop.name
+  serializeString(propName)
+  append(": ")
+  serializePropertyValue(prop.get(obj))
+ }
+ ```
+ serializeProperty는 앞에서 설명한 것처럼 @JsonName에 따라 프로퍼티 이름을 처리한다.
+
+ #### @CustomSerializer
+ 이 구현은 getSerializer라는 함수에 기초한다. getSerializer는 @CustomSerializer를 통해 등록한 ValueSerializer 인스턴스를 반환한다.
+ ```kotlin
+ data class Person(
+  val name: String,
+  @CustomSerializer(DateSerializer::class) val birthDate: Date
+ )
+ ```
+
+ getSerializer 구현은 다음과 같다. 여기서 흥미로운 부분은 @CustomSerializer의 값으로 클래스와 객체(코틀린의 싱글턴 객체)를 처리하는 방식이다. 클래스와 객체는 모두 KClass 클래스로 표현된다.
+ * 객체 : object 선언에 의해 생성된 싱글턴을 가리키는 objectInstance라는 프로퍼티가 있다. 예를 들어 DateSerializer를 object로 선언한 경우 objectInstance 프로퍼티에 DateSerializer의 싱글턴 인스턴스가 들어있다. 따라서 그 싱글턴 인스턴스를 사용해 모든 객체를 직렬화하면 되므로 createInstance를 호출할 필요가 없다.
+ * 일반 클래스 : createInstance를 호출해서 새 인스턴스를 만들어야 한다. createInstance 함수는 java.lang.Class.newInstance와 비슷하다.
+ ```kotlin
+ fun KProperty<*>.getSerializer(): ValueSerializer<Any?>? {
+  val customSerializerAnn = findAnnotation<CustomSerializer>() ?: return null
+  val serializerClass = customSerializerAnn.serializerClass
+  val valueSerializer = serializerClass.objectInstance
+        ?: serializerClass.createInstance()
+  @Suppress("UNCHECKED_CAST")
+  return valueSerializer as ValueSerializer<Any?>
+ }
+ ```
+
+ #### serializeProperty의 최종 버전
+ ```kotlin
+ private fun StringBuilder.serializerProperty(
+  prop: KProperty1<Any, *>, obj: Any
+ ) {
+  val name = prop.findAnnotation<JsonName>()?.name ?: prop.name
+  serializeString(name)
+  append(": ")
+  val value = prop.get(obj)
+  val jsonValue =
+      prop.getSerializer()?.toJsonValue(value) // 프로퍼티에 대해 정의된 커스텀 직렬화기가 있으면 그 커스텀 직렬화기를 사용한다.
+                  ?: value // 커스텀 직렬화기가 없으면 일반적인 방법을 따라 프로퍼티를 직렬화한다.
+  serializePropertyValue(jsonValue)
+ }
+ ```
+ serializeProperty는 커스텀 직렬화기의 toJsonValue 함수를 호출해서 프로퍼티값을 JSON 형식으로 변환한다. 어떤 프로퍼티에 커스텀 직렬화기가 지정돼 있지 않다면 프로퍼티 값을 그냥 사용한다.
+
+ ### JSON 파싱과 객체 역직렬화
+ API는 직렬화와 마찬가지로 함수 하나로 이뤄져 있다.
+ ```kotlin
+ inline fun <reified T: Any> deserialize(json: String): T
+
+ data class Author(val name: String)
+ data class Book(val title: String, val author: Author)
+ >>> val json = """{"title": "Catch-22", "author": {"name": "J. Heller"}}"""
+ >>> val book = deserialize<Book>(json)
+ >>> println(book) // Book(title=Catch-22, author=Author(name=J. Heller))
+ ```
+ 제이키드의 JSON 역직렬화기는 흔히 쓰는 방법을 따라 3단계로 구현돼 있다.
+ 1. 어휘 분석기(=렉셔)
+ 2. 문법 분석기(=파서)
+ 3. 역직렬화 컴포넌트(파싱한 결과로 객체를 생성)
+
+ #### 어휘 분석기
+ 여러 문자로 이뤄진 입력 문자열을 **토큰**의 리스트로 변환한다.
+ * **문자 토큰**은 문자를 표현하며 JSON 문법에서 중요한 의미가 있다(콤마, 콜론, 중괄호, 각괄호가 문자 토큰이다).
+ * **값 토큰**은 문자열, 수, 불리언 값, null 상수를 말한다. 왼쪽 중괄호({), 문자열 값("Catch-22"), 정수 값(42)은 모두 서로 다른 토큰이다.
+
+ #### 파서
+ 토큰의 리스트를 구조화된 표현으로 변환한다. 제이키드에서 파서는 JSON의 상위 구조를 이해하고 토큰을 JSON에서 지원하는 의미 단위로 변환하는 일을 한다. 그런 의미 단위로는 키/값 쌍과 배열이 있다.
+
+ JsonObject 인터페이스는 현재 역직렬화하는 중인 객체나 배열을 추적한다. 파서는 현재 객체의 새로운 프로퍼티를 발견할 때마다 그 프로퍼티의 유형(간단한 값, 복합 프로퍼티, 배열)에 해당하는 JsonObject의 함수를 호출한다.
+ ```kotlin
+ interface JsonObject {
+  fun setSimpleProperty(propertyName: String, value: Any?)
+  fun createObject(propertyName: String): JsonObject
+  fun createArray(propertyName: String): JsonObject
+ }
+ ```
+ 각 메서드의 propertyName 파라미터는 JSON 키를 받는다. 따라서 파서가 객체를 값으로 하는 author 프로퍼티를 만나면 createObject("author") 메서드가 호출된다.
