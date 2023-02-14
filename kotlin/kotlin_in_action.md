@@ -194,6 +194,7 @@
           2. [리플렉션을 사용한 객체 직렬화 구현](#리플렉션을-사용한-객체-직렬화-구현)
           3. [애노테이션을 활용한 직렬화 제어](#애노테이션을-활용한-직렬화-제어)
           4. [JSON 파싱과 객체 역직렬화](#json-파싱과-객체-역직렬화)
+          5. [최종 역직렬화 단계: callBy(), 리플렉션을 사용해 객체 만들기](#최종-역직렬화-단계-callby-리플렉션을-사용해-객체-만들기)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -5016,4 +5017,78 @@ if(value is String) // 타입을 검사한다.
   fun createArray(propertyName: String): JsonObject
  }
  ```
- 각 메서드의 propertyName 파라미터는 JSON 키를 받는다. 따라서 파서가 객체를 값으로 하는 author 프로퍼티를 만나면 createObject("author") 메서드가 호출된다.
+ 각 메서드의 propertyName 파라미터는 JSON 키를 받는다.
+ * 파서가 객체를 값으로 하는 author 프로퍼티를 만나면 createObject("author") 메서드가 호출된다.
+ * 간단한 프로퍼티 값은 setSimpleProperty를 호출하면서 실제 값을 value에 넘기는 방식으로 등록한다.
+
+ #### 역직렬화기
+ JsonObject에 상응하는 코틀린 타입의 인스턴스를 점차 만들어내는 JsonObject 구현을 제공한다. 이런 구현은 클래스 프로퍼티와 JSON 키(title, author, name) 사이의 대응 관계를 찾아내고 중첩된 객체 값(Author의 인스턴스)을 만들어 낸다. 그렇게 모든 중첩 객체 값을 만들고 난 뒤에는 필요한 클래스(Book)의 인스턴스를 새로 만든다.
+
+ 제이키드는 객체를 생성한 다음에 프로퍼티를 설정하는 것을 지원하지 않는다. 따라서 제이키드 역직렬화기는 JSON에서 데이터를 읽는 과정에서 중간에 만든 프로퍼티 객체들을 어딘가에 저장해 뒀다가 나중에 생성자를 호출할 때 써야 한다(**시드**).
+ ```kotlin
+ interface Seed: JsonObject { // JsonObject 확장
+    fun spawn(): Any? // 객체 생성 과정이 끝난 후 결과 인스턴스를 얻기 위한 spawn 메서드를 추가 제공
+
+    fun createCompositeProperty( // 중첩된 객체나 중첩된 리스트를 만들 때 사용
+      propertyName: String,
+      isList: Boolean
+    ): JsonObject
+
+    ...
+ }
+ ```
+ spawn은 만들어낸 객체를 돌려주는 메서드다.
+ * ObjectSeed의 경우 : 생성된 객체를 반환
+ * ObjectListSeed, ValueListSeed의 경우 : 생성된 리스트를 반환
+
+ 값을 역직렬화하는 모든 과정을 처리하는 deserialize 함수
+ ```kotlin
+ fun <T: Any> deserialize(json: Reader, targetClass: KClass<T>): T {
+  val seed = ObjectSeed(targetClass, ClassInfoCache())
+  Parser(json, seed).parse()
+  return seed.spawn()
+ }
+ ```
+ * ObjectSeed : 직렬화할 객체의 프로퍼티를 담을 공간
+ * 파서 : 입력 스트림 리더인 json과 시드를 인자로 전달
+ * spawn() : 결과 객체를 생성
+
+ **ObjectSeed의 자세한 구현은 생략**
+
+ ### 최종 역직렬화 단계: callBy(), 리플렉션을 사용해 객체 만들기
+ * ClassInfo : 객체 인스턴스를 생성하고 생성자 파라미터 정보를 캐시한다. ObjectSeed 안에서 쓰인다.
+ * callBy : 파라미터 순서를 신경 쓰지 않아도 되고, call과 다르게 디폴트 파라미터 값을 지원한다.
+ ```kotlin
+ interface KCallable<out R> {
+  fun callBy(args: Map<KParameter, Any?>): R
+  ...
+ }
+ ```
+ 타입을 제대로 처리하기 위해 신경써야 한다(각 값의 타입이 생성자의 파라미터 타입과 일치해야 한다). KParameter.type 프로퍼티를 활용하면 파라미터의 타입을 알 수 있다.
+
+ 타입 변환에는 커스텀 직렬화에 사용했던 ValueSerializer 인스턴스를 똑같이 사용한다. 프로퍼티에 @CustomSerializer 애노테이션이 없다면 프로퍼티 타입에 따라 표준 구현을 불러와 사용한다.
+ ```kotlin
+ fun serializerForType(type: Type): ValueSerializer<out Any?>? =
+  when(type) {
+    Byte::class.java -> ByteSerializer
+    Int::class.java -> IntSerializer
+    Boolean::class.java -> BooleanSerializer
+    ...
+    else -> null
+  }
+  ```
+ 타입별 ValueSerializer 구현은 필요한 타입 검사나 변환을 수행한다.
+
+ * ClassInfoCache : 리플렉션 연산의 비용을 줄이기 위한 클래스
+ ```kotlin
+ class ClassInfoCache {
+  private val cacheData = mutableMapOf<KClass<*>, ClassInfo<*>>()
+  @Suppress("UNCHECKED_CAST")
+  operator fun <T: Any> get(cls: KClass<T>): ClassInfo<T> =
+    cacheData.getOrPut(cls) { ClassInfo(cls) } as ClassInfo<T>
+ }
+ ```
+ * cls에 대한 항목이 cacheData 맵에 있다면 그 항목을 반환
+ * 그런 항목이 없다면 전달받은 람다를 호출해서 키에 대한 값을 계산하고 계산한 결과 값을 맵에 저장한 다음에 반환
+
+ **ClassInfo 구현과 ensureAllParametersPresent 구현은 생략**
