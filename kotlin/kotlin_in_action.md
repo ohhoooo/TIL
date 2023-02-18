@@ -195,6 +195,15 @@
           3. [애노테이션을 활용한 직렬화 제어](#애노테이션을-활용한-직렬화-제어)
           4. [JSON 파싱과 객체 역직렬화](#json-파싱과-객체-역직렬화)
           5. [최종 역직렬화 단계: callBy(), 리플렉션을 사용해 객체 만들기](#최종-역직렬화-단계-callby-리플렉션을-사용해-객체-만들기)
+  11. [DSL 만들기](#11장-dsl-만들기)
+      1. [API에서 DSL로](#1-api에서-dsl로)
+          1. [영역 특화 언어라는 개념](#영역-특화-언어라는-개념)
+          2. [내부 DSL](#내부-dsl)
+          3. [DSL의 구조](#dsl의-구조)
+          4. [내부 DSL로 HTML 만들기](#내부-dsl로-html-만들기)
+      2. [구조화된 API 구축: DSL에서 수신 객체 지정 DSL 사용](#2-구조화된-api-구축-dsl에서-수신-객체-지정-dsl-사용)
+          1. [수신 객체 지정 람다와 확장 함수 타입](#수신-객체-지정-람다와-확장-함수-타입)
+          2. [수신 객체 지정 람다를 HTML 빌더 안에서 사용](#수신-객체-지정-람다를-html-빌더-안에서-사용)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -5092,3 +5101,257 @@ if(value is String) // 타입을 검사한다.
  * 그런 항목이 없다면 전달받은 람다를 호출해서 키에 대한 값을 계산하고 계산한 결과 값을 맵에 저장한 다음에 반환
 
  **ClassInfo 구현과 ensureAllParametersPresent 구현은 생략**
+
+# 11장 DSL 만들기
+ 영역 특화 언어(DSL)를 사용해 표현력이 좋고 코틀린다운 API를 설계하는 방법을 설명한다. 전통적인 API와 DSL 형식 API의 차이를 설명하고, DSL 형식의 API를 데이터베이스 접근, HTML 생성, 테스트, 빌드 스크립트 작성, 안드로이드 UI 레이아웃 정의 등의 여러 작업에 사용할 수 있다.
+
+ ## 1. API에서 DSL로
+ 궁극적인 목표는 코드의 가독성과 유지 보수성을 가장 좋게 유지하는 것이다. 모든 개발자는 API를 훌륭하게 만들기 위해 노력해야 한다.
+
+ 깔끔한 API란?
+ * 코드를 읽는 독자들이 어떤 일이 벌어질지 명확하게 이해할 수 있어야 한다(이름, 개념 등).
+ * 코드가 간결해야 한다.
+
+ 깔끔한 API를 작성할 수 있게 돕는 코틀린 기능
+ 일반 구문 | 간결한 구문 | 사용한 언어 특성
+ ---|---|---
+ StringUtil.capitalize(s) | s.capitalize() | 확장 함수
+ 1.to("one") | 1 to "one" | 중위 호출
+ set.add(2) | set += 2 | 연산자 오버로딩
+ map.get("key") | map["key"] | get 메서드에 대한 관례
+ file.use({ f -> f.read() }) | file.use { it.read() } | 람다를 괄호 밖으로 빼내는 관례
+ sb.append("yes")sb.append("no") | with (sb) { append("yes") append("no") } | 수신 객체 지정 람다
+ 
+ ### 영역 특화 언어라는 개념
+ 컴퓨터가 발명된 초기부터 컴퓨터로 풀 수 있는 모든 문제를 충분히 풀 수 있는 기능을 제공하는 **범용 프로그래밍 언어**와 특정 과업 또는 영역에 초점을 맞추고 그 영역에 필요하지 않은 기능을 없앤 **영역 특화 언어**를 구분해왔다.
+
+ #### 범용 프로그래밍 언어
+ * **명령적** : 어떤 연산을 완수하기 위해 필요한 각 단계를 순서대로 정확히 기술한다.
+
+ #### 영역 특화 언어
+ * **선언적** : 원하는 결과를 기술하기만 하고 그 결과를 달성하기 위해 필요한 세부 실행은 언어를 해석하는 엔진에 맡긴다.
+ * 특정 영역에 대한 연산을 더 간결하게 기술할 수 있다.
+ * DSL을 범용 언어로 만든 호스트 애플리케이션과 함께 조합하기가 어렵다.
+
+ ### 내부 DSL
+ 독립적인 문법 구조를 가진 외부 DSL과는 반대로 내부 DSL은 범용 언어로 작성된 프로그램의 일부며, 범용 언어와 동일한 문법을 사용한다. 따라서 내부 DSL은 완전히 다른 언어가 아니라 DSL의 핵심 장점을 유지하면서 주 언어를 특별한 방법으로 사용하는 것이다.
+
+ 외부 DSL(SQL)
+ ```SQL
+ SELECT Country.name, COUNT(Customer.id)
+  FROM Country
+  JOIN Customer
+    ON Country.id = Customer.country_id
+ GROUP BY Country.name
+ ORDER BY COUNT(Customer.id) DESC
+  LIMIT 1
+ ```
+
+ 내부 DSL(코틀린 익스포즈드)
+ ```kotlin
+ (Country join Customer)
+    .slice(Country.name, Count(Customer.id))
+    .selectAll()
+    .groupBy(Country.name)
+    .orderBy(Count(Customer.id), isAsc = false)
+    .limit(1)
+ ```
+ 두 번째 버전에서는 SQL 질의가 돌려주는 결과 집합을 코틀린 객체로 변환하기 위해 노력할 필요가 없다. 쿼리를 실행한 결과가 네이티브 코틀린 객체이기 때문이다.
+
+ ### DSL의 구조
+
+ DSL에만 존재하는 특징 : 구조 또는 문법
+
+ 전형적인 라이브러리
+ * 여러 메서드로 이뤄짐
+ * 클라이언트는 그런 메서드를 한번에 하나씩 호출함으로써 라이브러리를 사용
+ * 함수 호출 시퀸스에는 아무런 구조가 없으며, 한 호출과 다른 호출 사이에는 아무 맥락도 존재하지 않는다(명령-질의 API).
+
+ DSL의 메서드 호출
+ * DSL 문법에 의해 정해지는 더 커다란 구조에 속한다.
+ * 보통 람다를 중첩 시키거나 메서드 호출을 연쇄시키는 방식으로 구조를 만든다.
+ * 질의를 실행하려면 필요한 결과 집합의 여러 측면을 기술하는 메서드 호출을 조합해야 하며, 그렇게 메서드를 조합해서 만든 질의는 질의에 필요한 인자를 메서드 호출 하나에 모두 다 넘기는 것보다 훨씬 더 읽기 쉽다.
+
+ DSL 구조의 장점
+ * 같은 문맥을 함수 호출 시마다 반복하지 않고도 재사용할 수 있다.
+ ```kotlin
+ // DSL 구조
+ dependencies { // 람다 중첩을 통해 구조를 만든다.
+  compile("junit:junit:4.11")
+  compile("com.google.inject:guice:4.1.0")
+ }
+
+ //일반 명령-질의 API를 통해 같은 일을 하는 프로그램
+ project.dependencies.add("compile", "junit:junit:4.11")
+ project.dependencies.add("compile", "com.google.inject:guice:4.1.0")
+ ```
+
+ DSL 구조를 만드는 또 다른 방법(메서드 호출 연쇄)
+ ```kotlin
+ // 메서드 호출을 연쇄시켜 구조를 만드는 방법(프레임워크(코틀린테스트))
+ str should startWith("kot")
+
+ // 일반 제이유닛 API를 사용
+ assertTrue(str.startsWith("kot"))
+ ```
+
+ ### 내부 DSL로 HTML 만들기
+ 다음 예제에서 사용할 API는 kotlinx.html 라이브러리
+ ```kotlin
+ // 칸(셀(cell))이 하나인 표를 만드는 코드
+ fun createSimpleTable() = createHTML().
+    table {
+      tr {
+        td { +"cell" }
+      }
+    }
+
+ // 이와 같은 구조가 만들어내는 HTML
+ <table>
+  <tr>
+    <td>cell</td>
+  </tr>
+ </table>
+ ```
+ createSimpleTable 함수는 이 HTML 조각이 들어있는 문자열을 반환한다.
+
+ #### 코틀린 코드로 HTML을 만들려는 이유
+ * 타입 안전성을 보장한다(td를 tr 안에서만 사용할 수 있다).
+ * 코틀린 코드를 원하는 대로 사용할 수 있다(표를 정의하면서 동적으로 표의 칸을 생성할 수 있다).
+ ```kotlin
+ fun createAnotherTable() = createHTML().table {
+  val numbers = mapOf(1 to "one", 2 to "two")
+  for((num, string) in numbers) {
+    tr {
+      td { +"$num" }
+      td { +string }
+    }
+  }
+ }
+
+ // 이와 같은 구조가 만들어내는 HTML
+ <table>
+  <tr>
+    <td>1</td>
+    <td>one</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>two</td>
+  </tr>
+ </table>
+ ```
+
+ ## 2. 구조화된 API 구축: DSL에서 수신 객체 지정 DSL 사용
+ **수신 객체 지정 람다**는 구조화된 API를 만들 때 도움이 되는 강력한 코틀린 기능이다.
+
+ ### 수신 객체 지정 람다와 확장 함수 타입
+ ```kotlin
+ // 람다를 인자로 받는 buildString() 정의
+ fun buildString(
+  builderAction: (StringBuilder) -> Unit // 함수 타입인 파라미터를 정의
+ ): String {
+  val sb = StringBuilder()
+  builderAction(sb) // 람다 인자로 StringBuilder 인스턴스를 넘긴다.
+  return sb.toString()
+ }
+
+ >>> val s = buildString {
+  ... it.append("Hello, ") // "it"은 StringBuilder 인스턴스를 가리킨다.
+  ... it.append("World!")
+  ...}
+ >>> println(s) // Hello, World!
+
+ // 수신 객체 지정 람다를 사용해 다시 정의
+ fun buildString(
+  builderAction: StringBuilder.() -> Unit // 수신 객체가 있는 함수 타입의 파라미터를 선언한다.
+ ): String {
+  val sb = StringBuilder()
+  sb.builderAction() // StringBuilder 인스턴스를 람다의 수신 객체로 넘긴다.
+  return sb.toString()
+ }
+
+ >>> val s = buildString {
+  ... this.append("Hello, ") // "this" 키워드는 StringBuilder 인스턴스를 가리킨다.
+  ... append("World!") // "this"를 생략해도 묵시적으로 StringBuilder 인스턴스가 수신 객체로 취급된다.
+  ...}
+ }
+ >>> println(s) // Hello, World!
+ ```
+ buildString에게 수신 객체 지정 람다를 인자로 넘기기 때문에 람다 안에서 it을 사용하지 않아도 된다.
+
+ **확장 함수 타입 선언**
+ * **람다의 파라미터 목록에 있던 수신 객체 타입을 파라미터 목록을 여는 괄호 앞으로 빼 놓으면서 중간에 마침표(.)를 붙인 형태다((StringBuilder) -> Unit을 StringBuilder.() -> Unit으로).**
+
+ ![](../assets/kotlin-buildString.png)
+
+ ```kotlin
+ 수신 객체 타입.(파라미터 타입, 파라미터 타입) -> 반환 타입
+
+ fun buildString(builderAction: StringBuilder.() -> Unit): String =
+    StringBuilder().apply(builderAction).toString()
+ ```
+
+ apply 함수와 with 함수 구현
+ ```kotlin
+ inline fun <T> T.apply(block: T.() -> Unit): T {
+  block() // this.block()과 같다. "apply"의 수신 객체를 수신 객체로 지정해 람다(block)를 호출한다.
+  return this // 수신 객체를 반환한다.
+ }
+
+ inline fun <T, R> with(receiver: T, block: T.() -> R): R =
+    receiver.block() // 람다를 호출해 얻은 결과를 반환한다.
+ ```
+
+ 확장 함수 타입의 변수를 정의할 수도 있다.
+ * 확장 함수처럼 호출할 수 있다.
+ * 수신 객체 지정 람다를 요구하는 함수에게 인자로 넘길 수 있다.
+ ```kotlin
+ val appendExcl : StringBuilder.() -> Unit =
+        { this.append("!") }
+ >>> val stringBuilder = StringBuilder("Hi")
+ >>> stringBuilder.appendExcl()
+ >>> println(stringBuilder) // Hi
+ >>> println(buildString(appendExcl)) // !
+ ```
+
+ ### 수신 객체 지정 람다를 HTML 빌더 안에서 사용
+
+ #### HTML 빌더란?
+ * HTML을 만들기 위한 코틀린 DSL
+ * 더 넓은 범위의 개념인 **타입 안전한 빌더**의 대표적인 예
+ * 객체 계층 구조를 선언적으로 정의할 수 있다.
+ * XML이나 UI 컴포넌트 레이아웃을 정의할 때 빌더가 매우 유용하다.
+ * 코틀린 빌더는 타입 안전성을 보장한다.
+ ```kotlin
+ // 코틀린 HTML 빌더를 사용해 간단한 HTML 표 만들기
+ fun createSimpleTable() = createHTML().
+    table {
+      tr {
+        td { +"cell" }
+      }
+    }
+ ```
+ * table, tr, td등은 모두 고차 함수로 수신 객체 지정 람다를 인자로 받는다.
+ * 각 수신 객체 지정 람다가 이름 결정 규칙을 바꾼다.
+    1. table 함수에 넘겨진 람다에서는 tr 함수를 사용해 \<tr> HTML 태그를 만들 수 있다. 하지만 그 람다 밖에서는 tr이라는 이름의 함수를 찾을 수 없다.
+    2. td 함수는 tr 안에서만 접근 가능한 함수다.
+ * 각 블록의 이름 결정 규칙은 각 람다의 수신 객체에 의해 결정된다.
+    1. table에 전달된 수신 객체는 TABLE이라는 특별한 타입이며, 그 안에 tr 메서드 정의가 있다.
+    2. tr 함수는 TR 객체에 대한 확장 함수 타입의 람다를 받는다.
+
+ ```kotlin
+ // HTML 빌더를 위한 태그 클래스 정의
+ open class Tag
+ 
+ class TABLE : Tag {
+  fun tr(init: TR.() -> Unit) // tr 함수는 TR 타입을 수신 객체로 받는 람다를 인자로 받는다.
+ }
+
+ class TR : Tag {
+  fun td(init: TD.() -> Unit) // td 함수는 TD 타입을 수신 객체로 받는 람다를 인자로 받는다.
+ }
+
+ class TD : Tag
+ ```
+ TABLE, TR, TD는 모두 HTML 생성 코드에 나타나면 안 되는 **유틸리티 클래스**다. 그래서 이름을 모두 대문자로 만들어서 일반 클래스와 구분한다.
