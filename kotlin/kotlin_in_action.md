@@ -213,6 +213,7 @@
           1. [중위 호출 연쇄: 테스트 프레임워크의 should](#중위-호출-연쇄-테스트-프레임워크의-should)
           2. [원시 타입에 대한 확장 함수 정의: 날짜 처리](#원시-타입에-대한-확장-함수-정의-날짜-처리)
           3. [멤버 확장 함수: SQL을 위한 내부 DSL](#멤버-확장-함수-sql을-위한-내부-dsl)
+          4. [안코: 안드로이드 UI를 동적으로 생성하기](#안코-안드로이드-ui를-동적으로-생성하기)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -5617,6 +5618,8 @@ if(value is String) // 타입을 검사한다.
 
  다음 예제들은 익스포즈드 프레임워크에서 제공하는 SQL을 위한 내부 DSL에서 가져온 것이다.
  
+ (1) Table 안에 선언해야만 하는 확장
+
  익스포즈드 프레임워크에서 SQL로 테이블을 다루기 위해서는 Table 클래스를 확장한 객체로 대상 테이블을 정의해야 한다.
  ```kotlin
  // 익스포즈드에서 테이블 선언하기
@@ -5652,3 +5655,73 @@ if(value is String) // 타입을 검사한다.
 
  #### 멤버 확장에는 확장성이 떨어진다는 단점도 있다.
  멤버 확장은 어떤 클래스의 내부에 속해 있기 때문에 기존 클래스의 소스코드를 손대지 않고 새로운 멤버 확장을 추가할 수는 없다.
+
+ (2) where 조건에서 값을 비교할 때 쓰는 확장
+ ```kotlin 
+ // 익스포즈드에서 두 테이블 조인(join)하기
+ val result = (Country join Customer)
+          .select { Country.name eq "USA" } // WHERE Country.name = "USA" 라는 SQL 코드에 해당된다.
+ result.forEach { println(it[Customer.name]) }
+ ```
+ * select 메서드는 Table에 대해 호출되거나 두 Table을 조인한 결과에 대해 호출될 수 있다.
+ * select의 인자는 데이터를 선택할 때 사용할 조건을 기술하는 람다다.
+ * eq 메서드는 중위 표기법으로 식을 적었고, eq도 또 다른 멤버 확장이다.
+ * eq가 쓰일 수 있는 맥락은 select 메서드의 조건을 지정하는 경우다.
+ ```kotlin
+ fun Table.select(where: SqlExpressionBuilder.() -> Op<Boolean>): Query
+
+ object SqlExpressionBuilder {
+  infix fun<T> Column.eq(t: T): Op<Boolean>
+  ...
+ }
+ ```
+ * SqlExpressionBuilder 객체는 조건을 표현할 수 있는 여러 방식을 정의한다.
+    * 값을 서로 비교하거나, null인지 여부를 검사하거나, 수식을 계산하는 등
+ * 익스포즈드를 사용하는 코드에서는 결코 SqlExpressionBuilder를 명시적으로 사용하지 않는다.
+    * 하지만 묵시적 수신 객체로 쓰이는 경우가 있기 때문에 묵시적으로 SqlExpressionBuilder의 메서드를 호출하는 경우는 자주 있다.
+ * 따라서 그 select에 전달되는 람다 본문에서는 SqlExpressionBuilder에 정의가 들어있는 모든 확장 함수를 사용할 수 있다.
+
+ ### 안코: 안드로이드 UI를 동적으로 생성하기
+ ```kotlin
+ // 안코를 사용해 안드로이드 경고 창 표시하기
+ fun Activity.showAreYouSureAlert(process: () -> Unit) {
+  alert(title = "Are you sure?",
+        message = "Are you really sure?") {
+          positiveButton("Yes") { process() }
+          negativeButton("No") { cancel() }
+        }
+ }
+ ```
+ * 이 코드의 alert 함수의 세 번째 인자, positiveButton과 negativeButton의 인자에게 람다가 사용되었다.
+ * alert 함수의 수신 객체는 AlertDialogBuilder 타입이다.
+    * 여기서도 클래스 이름이 코드에 직접적으로 나타나진 않지만, 람다 안에서 AlertDialogBuilder의 멤버에 접근한다.
+
+ ```kotlin
+ fun Context.alert(message: String, title: String, init: AlertDialogBuilder.() -> Unit)
+
+ class AlertDialogBuilder {
+  fun positiveButton(text: String, callback: DialogInterface.() -> Unit)
+  fun negativeButton(text: String, callback: DialogInterface.() -> Unit)
+  ...
+ }
+ ```
+
+ 다음 예제는 안코 DSL이 XML 레이아웃 정의를 완전히 대치하는 더 복잡한 예제이다.
+ ```kotlin
+ verticalLayout {
+  val email = editText { // EditText 뷰 요소를 선언하고 그에 대한 참조를 저장한다.
+    hint = "Email" // 이 람다의 수신 객체는 안드로이드 API가 제공하는 일반 클래스 android.widget.EditText다.
+  }
+  val password = editText {
+    hint = "Password" // EditText.setHint("Password")를 호출하는 간단한 방법이다.
+    transformationMethod = // EditText.setTransformationMethod(...)를 호출한다.
+        PasswordTransformationMethod.getInstance()
+  }
+  button("Log In") { // 새 버튼을 선언한다.
+    onClick { // 그리고 버튼 클릭 시 수행해야 하는 작업을 정의한다.
+      logIn(email.text, password.text) // UI 요소 안에 정의한 참조를 사용해 각각의 요소에 들어있는 데이터에 접근한다.
+    }
+  }
+ }
+ ```
+ 내부 DSL을 사용하면 UI와 비즈니스 로직을 다른 컴포넌트로 분리할 수 있지만 모든 컴포넌트를 여전히 코틀린 코드로 작성할 수 있다.
