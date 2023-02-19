@@ -204,6 +204,15 @@
       2. [구조화된 API 구축: DSL에서 수신 객체 지정 DSL 사용](#2-구조화된-api-구축-dsl에서-수신-객체-지정-dsl-사용)
           1. [수신 객체 지정 람다와 확장 함수 타입](#수신-객체-지정-람다와-확장-함수-타입)
           2. [수신 객체 지정 람다를 HTML 빌더 안에서 사용](#수신-객체-지정-람다를-html-빌더-안에서-사용)
+          3. [코틀린 빌더: 추상화와 재사용을 가능하게 하는 도구](#코틀린-빌더-추상화와-재사용을-가능하게-하는-도구)
+      3. [invoke 관례를 사용한 더 유연한 블록 중첩](#3-invoke-관례를-사용한-더-유연한-블록-중첩)
+          1. [invoke 관례: 함수처럼 호출할 수 있는 객체](#invoke-관례-함수처럼-호출할-수-있는-객체)
+          2. [invoke 관례와 함수형 타입](#invoke-관례와-함수형-타입)
+          3. [DSL의 invoke 관례: 그레이들에서 의존관계 정의](#dsl의-invoke-관례-그레이들에서-의존관계-정의)
+      4. [실전 코틀린 DSL](#4-실전-코틀린-dsl)
+          1. [중위 호출 연쇄: 테스트 프레임워크의 should](#중위-호출-연쇄-테스트-프레임워크의-should)
+          2. [원시 타입에 대한 확장 함수 정의: 날짜 처리](#원시-타입에-대한-확장-함수-정의-날짜-처리)
+          3. [멤버 확장 함수: SQL을 위한 내부 DSL](#멤버-확장-함수-sql을-위한-내부-dsl)
 
 # 01장 코틀린이란 무엇이며 왜 필요한가?
 
@@ -5327,10 +5336,11 @@ if(value is String) // 타입을 검사한다.
  // 코틀린 HTML 빌더를 사용해 간단한 HTML 표 만들기
  fun createSimpleTable() = createHTML().
     table {
-      tr {
-        td { +"cell" }
+      tr { // == (this@table).tr / this@table의 타입은 TABLE이다.
+        td { +"cell" } // == (this@tr).td / this@tr의 타입은 TR이다.
       }
     }
+ // 수신 객체 지정 람다를 사용하기 때문에 문법이 간단해지고 전체적인 구문이 원래의 HTML 구문과 비슷해진다.
  ```
  * table, tr, td등은 모두 고차 함수로 수신 객체 지정 람다를 인자로 받는다.
  * 각 수신 객체 지정 람다가 이름 결정 규칙을 바꾼다.
@@ -5339,19 +5349,306 @@ if(value is String) // 타입을 검사한다.
  * 각 블록의 이름 결정 규칙은 각 람다의 수신 객체에 의해 결정된다.
     1. table에 전달된 수신 객체는 TABLE이라는 특별한 타입이며, 그 안에 tr 메서드 정의가 있다.
     2. tr 함수는 TR 객체에 대한 확장 함수 타입의 람다를 받는다.
+ * 수신 객체 지정 람다가 다른 수신 객체 지정 람다 안에 들어가면 내부 람다에서 외부 람다에 정의된 수신 객체를 사용할 수 있다. 한편 코틀린 1.1부터는 @DslMarker 애노테이션을 사용해 중첩된 람다에서 외부 람다의 수신 객체를 접근하지 못하게 제한할 수 있다.
 
  ```kotlin
  // HTML 빌더를 위한 태그 클래스 정의
- open class Tag
+ open class Tag(val name: String) {
+  private val children = mutableListOf<Tag>() // 모든 중첩 태그를 저장한다.
+  protected fun <T: Tag> doInit(child: T, init: T.() -> Unit) {
+    child.init() // 자식 태그를 초기화한다.
+    children.add(child) // 자식 태그에 대한 참조를 저장한다.
+  }
+  override fun toString() =
+      "<$name>${children.joinToString("")}</$name>" // 결과 HTML을 문자열으로 반환한다.
+ }
  
- class TABLE : Tag {
-  fun tr(init: TR.() -> Unit) // tr 함수는 TR 타입을 수신 객체로 받는 람다를 인자로 받는다.
+ fun table(init: TABLE.() -> Unit) = TABLE().apply(init)
+
+ class TABLE : Tag("table") {
+  fun tr(init: TR.() -> Unit) = doInit(TR(), init) // TR 태그 인스턴스를 새로 만들고 초기화한 다음에 TABLE 태그의 자식으로 등록한다.
  }
 
- class TR : Tag {
-  fun td(init: TD.() -> Unit) // td 함수는 TD 타입을 수신 객체로 받는 람다를 인자로 받는다.
+ class TR : Tag("tr") {
+  fun td(init: TD.() -> Unit) = doInit(TD(), init) // TD 태그의 새 인스턴스를 만들어서 TR 태그의 자식으로 등록한다.
  }
 
- class TD : Tag
+ class TD : Tag("td")
+
+ fun createTable() =
+    table {
+      tr {
+        td {
+        }
+      }
+    }
+ >>> println(createTable()) // <table><tr><td></td></tr></table>
  ```
  TABLE, TR, TD는 모두 HTML 생성 코드에 나타나면 안 되는 **유틸리티 클래스**다. 그래서 이름을 모두 대문자로 만들어서 일반 클래스와 구분한다.
+
+ 태그 생성 함수가 자신이 새로 생성한 태그를 부모 태그가 가진 자식 목록에 추가한다. 따라서 태그를 동적으로 만들 수 있다.
+ ```kotlin
+ fun createAnotherTable() = table {
+  for(i in 1..2) {
+    tr {
+      td {
+      }
+    }
+  }
+ }
+ >>> println(createAnotherTable())
+ <table><tr><td></td></tr><tr><td></td></tr></table>
+ ```
+
+ ### 코틀린 빌더: 추상화와 재사용을 가능하게 하는 도구
+ 내부 DSL을 사용하면 일반 코드와 마찬가지로 반복되는 내부 DSL 코드 조각을 새 함수로 묶어서 재사용할 수 있다.
+
+ 부트스트랩 라이브러리를 사용해 드롭다운 메뉴를 코틀린 HTML 빌더를 사용해 만드는 예시
+ ```kotlin
+ fun dropdownExample() = createHTML().dropdown {
+  dropdownButton { +"Dropdown" }
+  dropdownMenu {
+    item("#", "Action")
+    item("#", "Another action")
+    divider()
+    dropdownHeader("HeaDER")
+    item("#", "Separated link")
+  }
+ }
+ ```
+ * 어떻게 구현할까?
+    * item 함수
+        * 두 개의 파라미터 : 1. href에 들어갈 주소 2. 메뉴 원소의 이름
+        * 함수 코드 : 드롭다운 메뉴 목록에 li { a(href) { +name }}라는 원소를 새로 추가한다.
+        * li 함수가 UL 클래스의 확장 함수이므로 이 경우도 UL 클래스의 확장 함수로 구현할 수 있다.
+ ```kotlin
+ fun UL.item(href: String, name: String) = li { a(href) { +name } }
+ ```
+
+ **코틀린 HTML 빌더를 만드는 여러과정이나 다른 설명이 생략되어있음**
+
+ ## 3. invoke 관례를 사용한 더 유연한 블록 중첩
+ * invoke 관례를 사용하면 객체를 함수처럼 호출할 수 있다.
+ * **관례**는 특별한 이름이 붙은 함수를 일반 메서드 호출 구문으로 호출하지 않고 더 간단한 다른 구문으로 호출할 수 있게 지원하는 기능이다.
+
+ ### invoke 관례: 함수처럼 호출할 수 있는 객체
+ * invoke는 괄호를 사용한다.
+ * operator 변경자가 붙은 invoke 메서드 정의가 들어있는 클래스의 객체를 함수처럼 호출할 수 있다.
+ * 원하는 대로 파라미터 개수나 타입을 지정할 수 있다.
+ * 여러 파라미터 타입을 지원하기 위해 invoke를 오버로딩할 수도 있다.
+ ```kotlin
+ class Greeter(val greeting: String) {
+  operator fun invoke(name: String) { // Greeter 안에 "invoke" 메서드를 정의한다.
+    println("$greeting, $name!")
+  }
+ }
+ >>> val bavarianGreeter = Greeter("Servus")
+ >>> bavarianGreeter("Dmitry") // Greeter 인스턴스를 함수처럼 호출한다.
+ Servus, Dmitry!
+ ```
+ bavarianGreeter("Dmitry")는 내부적으로 bavarianGreeter.invoke("Dmitry")로 컴파일된다.
+
+ ### invoke 관례와 함수형 타입
+ * 인라인하는 람다를 제외한 모든 람다는 함수형 인터페이스(Function1 등)를 구현하는 클래스로 컴파일된다.
+ * 각 함수형 인터페이스 안에는 그 인터페이스 이름이 가리키는 개수만큼 파라미터를 받는 invoke 메서드가 들어있다.
+ ```kotlin
+ interface Function2<in P1, in P2, out R> { // 이 인터페이스는 정확히 인자를 2개 받는 함수를 표현한다.
+  operator fun invoke(p1: P1, p2: P2): R
+ }
+ ```
+ * 람다를 함수처럼 호출하면 이 관례에 따라 invoke 메서드 호출로 변환된다.
+    1. 복잡한 람다를 여러 메서드로 분리하면서도 여전히 분리 전의 람다처럼 외부에서 호출할 수 있는 객체를 만들 수 있다.
+    2. 함수 타입 파라미터를 받는 함수에게 그 객체를 전달할 수 있다.
+ ```kotlin
+ data class Issue(
+  val id: String, val project: String, val type: String,
+  val priority: String, val description: String
+ )
+
+ class ImportantIssuesPredicate(val project: String)
+        : (Issue) -> Boolean { // 함수 타입을 부모 클래스로 사용한다.
+    override fun invoke(issue: Issue): Boolean { // "invoke" 메서드를 구현한다.
+      return issue.project == project && issue.isImportant()
+    }
+
+    private fun Issue.isImportant(): Boolean {
+      return type == "Bug" && (priority == "Major" || priority == "Critical")
+    }
+ }
+ >>> val i1 = Issue("IDEA-154446", "IDEA", "Bug", "Major", "Save Settings failed")
+ >>> val i2 = Issue("KT-12183", "Kotlin", "Feature", "Normal",
+      "Intention: convert several calls on the same receiver to with/apply")
+ >>> val predicate = ImportantIssuesPredicate("IDEA")
+ >>> for(issue in listOf(i1, i2).filter(predicate)) { // 술어를 filter()에게 넘긴다.
+  println(issue.id)
+ } // IDEA-154446
+ ```
+ 위의 코드는 술어의 로직이 너무 복잡해서 한 람다로 표현하기 어렵다. 그래서 람다를 여러 메서드로 나누고 각 메서드에 뜻을 명확히 알 수 있는 이름을 붙이고 싶다.
+ 1. 람다를 함수 타입 인터페이스를 구현하는 클래스로 변환하고 그 클래스의 invoke 메서드를 오버라이드하면 그런 리팩토링이 가능하다.
+ 2. 1번의 접근 방법에는 람다 본문에서 따로 분리해 낸 메서드가 영향을 끼치는 영역을 최소화할 수 있다는 장점이 있다.
+    * 위의 예제에서는 술어 클래스 내부에서만 람다에서 분리해낸 메서드를 볼 수 있다.
+
+ ### DSL의 invoke 관례: 그레이들에서 의존관계 정의
+ ```kotlin
+ // 이 코드처럼 중첩된 블록 구조를 허용하게 하거나
+ dependencies {
+  compile("junit:junit:4.11")
+ }
+
+ // 넓게 펼쳐진 형태의 함수 호출 구조도 함께 제공하는 API는 어떻게 만들까?
+ dependencies.compile("junit:junit:4.11")
+ ```
+ 1. 첫 번째 경우에는 dependencies 안에 람다를 받는 invoke 메서드를 정의하고 호출한다.
+    * 위의 예시를 풀어쓰면 dependencies.invoke({ ... }) 이다.
+ 2. 두 번째 경우에는 dependencies 변수에 대해 compile 메서드를 호출한다.
+ ```kotlin
+ class DependencyHandler {
+  fun compile(coordinate: String) { // 일반적인 명령형 API를 정의한다(두 번째 경우).
+    println("Added dependency on $coordinate")
+  }
+
+  operator fun invoke(
+    body: DependencyHandler.() -> Unit) { // "invoke"를 정의해 DSL 스타일 API를 제공한다.
+      body() // "this"가 함수의 수신 객체가 되므로 this.body()와 같다.
+    }
+  )
+ }
+ >>> val dependencies = DependencyHandler()
+
+ >>> dependencies.compile("org.jetbrains.kotlin:kotlin-stdlib:1.0.0")
+ Added dependency on org.jetbrains.kotlin:kotlin-stdlib:1.0.0
+
+ >>> dependencies {
+  compile("org.jetbrains.kotlin:kotlin-reflect:1.0.0")
+ }
+ Added dependency on org.jetbrains.kotlin:kotlin-reflect:1.0.0
+ ```
+ 위 예시의 두 번째 호출은 결과적으로 다음과 같이 변환된다.
+ ```kotlin
+ dependencies.invoke({
+  this.compile("org.jetbrains.kotlin:kotlin-reflect:1.0.0")
+ })
+ ```
+ 1. dependencies를 함수처럼 호출하면서 람다를 인자로 넘긴다.
+ 2. 람다의 타입은 확장 함수 타입(수신 객체를 지정한 함수 타입)이며, 지정한 수신 객체 타입은 DependencyHandler다.
+ 3. invoke 메서드는 이 수신 객체 지정 람다를 호출한다.
+ 4. invoke가 DependencyHandler의 메서드이므로 이 메서드 내부에서 묵시적 수신 객체 this는 DependencyHandler의 객체다.
+ 5. 따라서 invoke 안에서 DependencyHandler 타입의 객체를 따로 명시하지 않고 compile()을 호출할 수 있다.
+
+ ## 4. 실전 코틀린 DSL
+
+ ### 중위 호출 연쇄: 테스트 프레임워크의 should
+ ```kotlin
+ s should startWith("kot")
+
+ // should 함수 구현
+ infix fun <T> T.should(matcher: Matcher<T>) = matcher.test(this)
+
+ // Matcher 선언
+ interface Matcher<T> {
+  fun test(value: T)
+ }
+
+ class startWith(val prefix: String) : Matcher<String> {
+  override fun test(value: String) {
+    if(!value.startsWith(prefix))
+      throw AssertionError("String $value does not start with $prefix")
+  }
+ }
+
+ // 여기서부터는 약간 더 기교를 부려 잡음을 더 많이 감소시킴
+ // 중위 메서드 호출 연쇄
+ "kotlin" should start with "kot"
+
+ // 일반 메서드 호출 연쇄
+ "kotlin".should(start).with("kot")
+
+ // 이 오버로딩한 should 함수는 중간 래퍼 객체를 돌려주는데, 이 래퍼 객체 안에는 중위 호출 가능한 with 메서드가 들어있다.
+ object start
+
+ infix fun String.should(x: start): StartWrapper = StartWrapper(this)
+
+ class StartWrapper(val value: String) {
+  infix fun with(prefix: String) =
+    if(!value.startsWith(prefix))
+      throw AssertionError("String does not start with $prefix: $value")
+    else
+      Unit
+ }
+ ```
+ * 평범한 프로그램이라면 startWith 클래스의 첫 글자를 대문자로 해야하지만 DSL에서는 그런 일반적인 명명 규칙을 벗어나야 할 때가 있다.
+ * DSL이라는 맥락 밖에서는 object로 선언한 타입을 파라미터 타입으로 사용할 이유가 거의 없지만 여기서는 객체를 파라미터 타입으로 사용할 타당한 이유가 있다.
+    * start 객체는 함수에 데이터를 넘기기 위해서가 아니라 DSL의 문법을 정의하기 위해 사용된다.
+    * start를 인자로 넘김으로써 should를 오버로딩한 함수 중에서 적절한 함수를 선택할 수 있고, 그 함수를 호출한 결과로 StartWrapper 인스턴스를 받을 수 있다.
+ 
+ 코틀린테스트 라이브러리는 다른 Matcher도 지원하며, 그 Matcher들은 모두 일반 영어 문장처럼 보이는 단언문을 구성한다.
+ ```kotlin
+ "kotlin" should end with "in" // "kotlin"은 "in"으로 끝나야 한다.
+ "kotlin" should have substring "otl" // "kotlin"은 "otl"이라는 부분 문자열을 포함해야 한다.
+ ```
+ **이런 문장을 지원하기 위해 should 함수에는 end나 have 같은 싱글턴 객체 인스턴스를 취하는 오버로딩 버전이 더 존재한다. 이들은 싱글턴의 종류에 따라 각각 EndWrapper와 HaveWrapper 인스턴스를 반환한다.**
+
+ ### 원시 타입에 대한 확장 함수 정의: 날짜 처리
+ ```kotlin
+ val yesterday = 1.days.ago
+ val tomorrow = 1.days.fromNow
+ ```
+ 자바 8의 java.time API와 코틀린을 사용해 이 API를 구현하는 데 단지 몇 줄의 코드로 충분하다.
+ ```kotlin
+ import java.time.Period
+ import java.time.LocalDate
+
+ val Int.days: Period
+    get() = Period.ofDays(this) // "this"는 상수의 값을 가리킨다.
+
+ val Period.ago: LocalDate
+    get() = LocalDate.now() - this // 연산자 구문을 사용해 LocalDate.minus를 호출한다.
+
+ val Period.fromNow: LocalDate
+    get() = LocalDate.now() + this // 연산자 구문을 사용해 LocalDate.plus를 호출한다.
+ >>> println(1.days.ago) // 2016-08-16
+ >>> println(1.days.fromNow) // 2016-08-18
+ ```
+ * Peroid는 두 날짜 사이의 시간 간격을 나타내는 JDK 8 타입이다.
+ * 위 예시의 +, -는 코틀린이 제공하는 확장 함수가 아니라 LocalDate라는 JDK 클래스의 plus, minus 메서드다.
+
+ ### 멤버 확장 함수: SQL을 위한 내부 DSL
+ 클래스 안에서 확장 함수와 확장 프로퍼티를 선언하는 것은 그들이 선언된 클래스의 멤버인 동시에 그들이 확장하는 다른 타입의 멤버이기도 하다. 이런 함수나 프로퍼티를 **멤버 확장**이라 부른다.
+
+ 다음 예제들은 익스포즈드 프레임워크에서 제공하는 SQL을 위한 내부 DSL에서 가져온 것이다.
+ 
+ 익스포즈드 프레임워크에서 SQL로 테이블을 다루기 위해서는 Table 클래스를 확장한 객체로 대상 테이블을 정의해야 한다.
+ ```kotlin
+ // 익스포즈드에서 테이블 선언하기
+ object Country : Table() {
+  val id = integer("id").autoIncrement().primaryKey() // Column<Int> 타입
+  val name = varchar("name", 50) // Column<String> 타입
+ }
+
+ // 테이블 생성
+ SchemaUtils.create(Country)
+
+ CREATE TABLE IF NOT EXISTS Country (
+  id INT AUTO_INCREMENT NOT NULL,
+  name VARCHAR(50) NOT NULL,
+  CONSTRAINT pk_Country PRIMARY KEY(id)
+ )
+ ```
+
+ 익스포즈드 프레임워크의 Table 클래스는 방금 살펴본 두 타입을 포함해 데이터베이스 테이블에 대해 정의할 수 있는 모든 타입을 정의한다.
+ ```kotlin
+ class Table {
+  fun integer(name: String): Column<Int>
+  fun varchar(name: String, length: Int): Column<String>
+
+  fun <T> Column<T>.primaryKey(): Column<T> // 이 칼럼을 테이블의 기본키로 지정한다.
+  fun Column<Int>.autoIncrement(): Column<Int> // 숫자 타입의 칼럼만 자동 증가 칼럼으로 설정할 수 있다.
+ }
+ ```
+ * **autoIncrement**나 **primaryKey** 같은 메서드를 사용해 각 칼럼의 속성을 지정한다.
+    * 각 메서드는 자신의 수신 객체를 다시 반환하기 때문에 메서드를 연쇄 호출할 수 있다.
+    * 두 함수는 Table 클래스의 멤버이므로 Table 클래스 밖에서 이 함수들을 호출할 수 없다.
+        * 멤버 확장으로 정의하는 이유는 메서드가 적용되는 범위를 제한하기 위함이다.
+
+ #### 멤버 확장에는 확장성이 떨어진다는 단점도 있다.
+ 멤버 확장은 어떤 클래스의 내부에 속해 있기 때문에 기존 클래스의 소스코드를 손대지 않고 새로운 멤버 확장을 추가할 수는 없다.
