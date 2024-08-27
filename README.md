@@ -11,3 +11,6 @@
 
 ## 운영체제
 * [혼자 공부하는 컴퓨터구조+운영체제](https://github.com/ohhoooo/TIL/blob/main/os/%ED%98%BC%EC%9E%90_%EA%B3%B5%EB%B6%80%ED%95%98%EB%8A%94_%EC%BB%B4%ED%93%A8%ED%84%B0%EA%B5%AC%EC%A1%B0%2B%EC%9A%B4%EC%98%81%EC%B2%B4%EC%A0%9C.md)
+
+## 네트워크
+* [Do it 네트워크 기초](https://github.com/ohhoooo/TIL/blob/main/network/Do_it_%EB%84%A4%ED%8A%B8%EC%9B%8C%ED%81%AC_%EA%B8%B0%EC%B4%88.md)
